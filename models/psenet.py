@@ -34,10 +34,9 @@ class PSENet(nn.Module):
                 img_metas=None,
                 cfg=None):
         outputs = dict()
-
+        start = time.time()
         if not self.training and cfg.report_speed:
             torch.cuda.synchronize()
-            start = time.time()
 
         # backbone
         f = self.backbone(imgs)

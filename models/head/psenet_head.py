@@ -43,10 +43,10 @@ class PSENet_Head(nn.Module):
 
     def get_results(self, out, img_meta, cfg):
         outputs = dict()
+        start = time.time()
 
         if not self.training and cfg.report_speed:
             torch.cuda.synchronize()
-            start = time.time()
 
         score = torch.sigmoid(out[:, 0, :, :])
         # out = (torch.sign(out - 1) + 1) / 2  # 0 1
@@ -60,6 +60,7 @@ class PSENet_Head(nn.Module):
 
         score = score.data.cpu().numpy()[0].astype(np.float32)
         kernels = kernels.data.cpu().numpy()[0].astype(np.uint8)
+
         # kernel_1 = kernels[1]
         # kernel_2 = kernels[2]
         # kernel_3 = kernels[3]
@@ -101,8 +102,7 @@ class PSENet_Head(nn.Module):
 
         label_num = np.max(label) + 1
         h, w = img_size.numpy()[:2]
-        # todo dataset pre processing
-        # print(label.shape, (w, h))
+
         label = cv2.resize(label, (w, h), interpolation=cv2.INTER_NEAREST)
         score = cv2.resize(score, (w, h), interpolation=cv2.INTER_NEAREST)
 
@@ -138,6 +138,9 @@ class PSENet_Head(nn.Module):
                 binary[ind] = 1
                 _, contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 bbox = contours[0] * scale
+            else:
+                raise Exception("There is no bbox")
+            # bbox = np.reshape(bbox, (-1, 2)) / np.array([float(org_img_size[1]), float(org_img_size[0])])
 
             bbox = bbox.astype('int32')
             bboxes.append(bbox.reshape(-1))
