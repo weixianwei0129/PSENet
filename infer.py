@@ -1,67 +1,58 @@
+import glob
+import json
+import os
+import sys
+
 import cv2
 import torch
-import numpy as np
 import argparse
-import os
-import os.path as osp
-import sys
-import time
-import json
+import numpy as np
+from PIL import Image
 from mmcv import Config
+import torchvision.transforms as transforms
 
-from dataset import build_data_loader
 from models import build_model
 from models.utils import fuse_module
-from utils import ResultFormat, AverageMeter
 
 
-def report_speed(outputs, speed_meters):
-    total_time = 0
-    for key in outputs:
-        if 'time' in key:
-            total_time += outputs[key]
-            speed_meters[key].update(outputs[key])
-            print('%s: %.4f' % (key, speed_meters[key].avg))
+def scale_aligned_short(img, short_size=736):
+    # print('original img_size:', img.shape)
+    h, w = img.shape[0:2]
+    scale = short_size * 1.0 / min(h, w)
+    h = int(h * scale + 0.5)
+    w = int(w * scale + 0.5)
+    if h % 32 != 0:
+        h = h + (32 - h % 32)
+    if w % 32 != 0:
+        w = w + (32 - w % 32)
+    img = cv2.resize(img, dsize=(w, h))
+    # print('img_size:', img.shape)
+    return img
 
-    speed_meters['total_time'].update(total_time)
-    print('FPS: %.1f' % (1.0 / speed_meters['total_time'].avg))
 
+def pre_process(img_path):
+    img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    img = img[:, :, [2, 1, 0]]
 
-def test(test_loader, model, cfg):
-    model.eval()
+    img_meta = dict(
+        org_img_size=[np.array(img.shape[:2])]
+    )
 
-    for idx, data in enumerate(test_loader):
-        print('Testing %d/%d' % (idx, len(test_loader)))
-        sys.stdout.flush()
+    img = scale_aligned_short(img, 736)
+    img_meta.update(dict(
+        img_size=[np.array(img.shape[:2])]
+    ))
 
-        # prepare input
-        # data['imgs'] = data['imgs'].cuda()
-        data.update(dict(
-            cfg=cfg
-        ))
+    img = Image.fromarray(img)
+    img = img.convert('RGB')
+    img = transforms.ToTensor()(img)
+    img = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(img)
 
-        # forward
-        with torch.no_grad():
-            outputs = model(**data)
-
-        # vision
-        image_data = data['imgs'].numpy()
-        image_data = np.transpose(image_data[0], [1, 2, 0])
-        image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data))
-        image_data = (image_data * 255).astype(np.uint8)
-        image_data = image_data[:, :, ::-1]
-        cv2.imwrite("tmp.jpg", image_data)
-        image_data = cv2.imread("tmp.jpg")
-        org_img_size = data['img_metas']['org_img_size'].numpy()[0]
-        image_data = cv2.resize(image_data, (org_img_size[1], org_img_size[0]))
-        for box in outputs['bboxes']:
-            box = np.reshape(box, (-1, 1, 2))
-            image_data = cv2.polylines(image_data, [box], 1, (0, 0, 255))
-        cv2.imshow("image", image_data)
-        key = cv2.waitKey(0)
-        os.remove('tmp.jpg')
-        if key == 113:
-            exit()
+    data = dict(
+        imgs=img[None, ...],
+        img_metas=img_meta
+    )
+    return data
 
 
 def main(args):
@@ -71,27 +62,24 @@ def main(args):
             report_speed=args.report_speed
         ))
     print(json.dumps(cfg._cfg_dict, indent=4))
-    sys.stdout.flush()
+    # sys.stdout.flush()
 
-    # data loader
-    data_loader = build_data_loader(cfg.data.test)
-    test_loader = torch.utils.data.DataLoader(
-        data_loader,
-        batch_size=1,
-        shuffle=False,
-        num_workers=2,
-    )
+    device = "cpu" if torch.cuda.is_available() else "cpu"
+    print(f"Using {device} device!")
+
     # model
     model = build_model(cfg.model)
-    # model = model.cuda()
+    if device == "cuda":
+        model = model.cuda()
 
     if args.checkpoint is not None:
         if os.path.isfile(args.checkpoint):
             print("Loading model and optimizer from checkpoint '{}'".format(args.checkpoint))
-            sys.stdout.flush()
 
-            checkpoint = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
-            # checkpoint = torch.load(args.checkpoint)
+            if device == "cuda":
+                checkpoint = torch.load(args.checkpoint)
+            else:
+                checkpoint = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
 
             d = dict()
             for key, value in checkpoint['state_dict'].items():
@@ -104,9 +92,34 @@ def main(args):
 
     # fuse conv and bn
     model = fuse_module(model)
+    model.eval()
 
-    # test
-    test(test_loader, model, cfg)
+    all_path = glob.glob("D:/wxw/PSENet/data/ICDAR2015/Challenge4/ch4_test_images/*.jpg")
+    print("total: ", len(all_path))
+    for idx, path in enumerate(all_path):
+        data = pre_process(path)
+        data.update(dict(
+            cfg=cfg
+        ))
+        # forward
+        with torch.no_grad():
+            outputs = model(**data)
+
+        # vision
+        image_data = data['imgs'].numpy()
+        image_data = np.transpose(image_data[0], [1, 2, 0])
+        image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data))
+        image_data = (image_data * 255).astype(np.uint8)
+        image_data = image_data[:, :, ::-1]
+        org_img_size = data['img_metas']['org_img_size'][0]
+        image_data = cv2.resize(image_data, (org_img_size[1], org_img_size[0]))
+        for box in outputs['bboxes']:
+            box = np.reshape(box, (-1, 1, 2))
+            image_data = cv2.polylines(image_data, [box], 1, (0, 0, 255))
+        cv2.imshow("image", image_data)
+        key = cv2.waitKey(0)
+        if key == 113:
+            exit()
 
 
 if __name__ == '__main__':

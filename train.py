@@ -136,6 +136,7 @@ def save_checkpoint(state, checkpoint_path, cfg):
 
 
 def main(args):
+    cuda = torch.cuda.is_available()
     cfg = Config.fromfile(args.config)
     print(json.dumps(cfg._cfg_dict, indent=4))
 
@@ -143,7 +144,8 @@ def main(args):
         checkpoint_path = args.checkpoint
     else:
         cfg_name, _ = osp.splitext(osp.basename(args.config))
-        checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
+        checkpoint_path = osp.join('D:/models/psenet/train_models', cfg_name)
+        # checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
     if not osp.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
     print('Checkpoint path: %s.' % checkpoint_path)
@@ -155,14 +157,17 @@ def main(args):
         data_loader,
         batch_size=cfg.data.batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=1,
         drop_last=True,
         pin_memory=True
     )
 
     # model
     model = build_model(cfg.model)
-    model = torch.nn.DataParallel(model).cuda()
+    if cuda:
+        model = torch.nn.DataParallel(model).cuda()
+    else:
+        model = torch.nn.DataParallel(model)
 
     # Check if model has custom optimizer / loss
     if hasattr(model.module, 'optimizer'):

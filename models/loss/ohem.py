@@ -1,5 +1,6 @@
 import torch
 
+
 def ohem_single(score, gt_text, training_mask):
     pos_num = int(torch.sum(gt_text > 0.5)) - int(torch.sum((gt_text > 0.5) & (training_mask <= 0.5)))
 
@@ -25,10 +26,10 @@ def ohem_single(score, gt_text, training_mask):
     selected_mask = selected_mask.reshape(1, selected_mask.shape[0], selected_mask.shape[1]).float()
     return selected_mask
 
+
 def ohem_batch(scores, gt_texts, training_masks):
     selected_masks = []
     for i in range(scores.shape[0]):
         selected_masks.append(ohem_single(scores[i, :, :], gt_texts[i, :, :], training_masks[i, :, :]))
-
     selected_masks = torch.cat(selected_masks, 0).float()
     return selected_masks

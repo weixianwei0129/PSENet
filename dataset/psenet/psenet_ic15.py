@@ -9,9 +9,9 @@ import pyclipper
 import Polygon as plg
 import math
 import mmcv
-import string
 
-ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
+# ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
+ic15_root_dir = "D:/dataset/pse_dataset/icdar15/"
 ic15_train_data_dir = ic15_root_dir + 'ch4_training_images/'
 ic15_train_gt_dir = ic15_root_dir + 'ch4_training_localization_transcription_gt/'
 
@@ -107,7 +107,10 @@ def random_rotate(imgs):
         img = imgs[i]
         w, h = img.shape[:2]
         rotation_matrix = cv2.getRotationMatrix2D((h / 2, w / 2), angle, 1)
-        img_rotation = cv2.warpAffine(img, rotation_matrix, (h, w), flags=cv2.INTER_NEAREST)
+        if i == 2:
+            img_rotation = cv2.warpAffine(img, rotation_matrix, (h, w), flags=cv2.INTER_NEAREST, borderValue=1)
+        else:
+            img_rotation = cv2.warpAffine(img, rotation_matrix, (h, w), flags=cv2.INTER_NEAREST, borderValue=0)
         imgs[i] = img_rotation
     return imgs
 
@@ -187,9 +190,40 @@ def random_crop_padding(imgs, target_size):
                                        value=tuple(0 for i in range(s3_length)))
         else:
             img = imgs[idx][i:i + t_h, j:j + t_w]
-            img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT, value=(0,))
+            if idx == 2:
+                img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT, value=(1,))
+            else:
+                img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT, value=(0,))
         n_imgs.append(img_p)
     return n_imgs
+
+
+def random_crop_v2(imgs, img_size):
+    h, w = imgs[0].shape[0:2]
+    th, tw = img_size
+    if w == tw and h == th:
+        return imgs
+
+    cnt = 0
+    while cnt < 100:
+        i = random.randint(0, h - th)
+        j = random.randint(0, w - tw)
+        gt_text = imgs[1][i:i + th, j:j + tw].copy()
+        training_mask = imgs[2][i:i + th, j:j + tw].copy()
+        valid_gt_text = gt_text * training_mask
+        if valid_gt_text.sum() > 100:
+            for idx in range(len(imgs)):
+                if len(imgs[idx].shape) == 3:
+                    imgs[idx] = imgs[idx][i:i + th, j:j + tw, :]
+                else:
+                    imgs[idx] = imgs[idx][i:i + th, j:j + tw]
+            return imgs
+        else:
+            cnt += 1
+    # when crop attempt failed, use the whole img
+    for idx in range(len(imgs)):
+        imgs[idx] = cv2.resize(imgs[idx], dsize=(tw, th))
+    return imgs
 
 
 class PSENET_IC15(data.Dataset):
@@ -225,14 +259,14 @@ class PSENET_IC15(data.Dataset):
 
         self.img_paths = []
         self.gt_paths = []
-
         for data_dir, gt_dir in zip(data_dirs, gt_dirs):
             img_names = [img_name for img_name in mmcv.utils.scandir(data_dir, '.jpg')]
             img_names.extend([img_name for img_name in mmcv.utils.scandir(data_dir, '.png')])
 
             img_paths = []
             gt_paths = []
-            for idx, img_name in enumerate(img_names):
+            # fixme 训练数据的数量
+            for idx, img_name in enumerate(img_names[:10]):
                 img_path = data_dir + img_name
                 img_paths.append(img_path)
 
@@ -278,7 +312,7 @@ class PSENET_IC15(data.Dataset):
                                 (bboxes.shape[0], -1, 2)).astype('int32')
             for i in range(bboxes.shape[0]):
                 cv2.drawContours(gt_instance, [bboxes[i]], -1, i + 1, -1)
-                if words[i] == '###':
+                if words[i] == '###':  # 如果包含看不清楚的文字，则把这块涂黑，不计算
                     cv2.drawContours(training_mask, [bboxes[i]], -1, 0, -1)
 
         gt_kernels = []
@@ -304,11 +338,25 @@ class PSENET_IC15(data.Dataset):
         gt_text[gt_text > 0] = 1
         gt_kernels = np.array(gt_kernels)
 
+        # # ==================================================
+        # cv2.imshow("img", img[:, :, ::-1])
+        # # # print(img.shape)  # torch.Size([3, 736, 736])
+        # # # print(gt_text.shape)  # (736, 736)
+        # # # print(gt_kernels.shape)  # (6, 736, 736)
+        # # # print(training_mask.shape)  # (736, 736)
+        # # for i in range(6):
+        # #     cv2.imshow(f"{i}", gt_kernels[i] * 255)
+        # # cv2.imshow("gt_text", gt_text * 255)
+        # cv2.imshow("training_mask", np.clip(training_mask * 255, 0, 255))
+        # key = cv2.waitKey(0)
+        # if key == 113:
+        #     exit()
+        # # ==================================================
+
         img = Image.fromarray(img)
         img = img.convert('RGB')
         if self.is_transform:
             img = transforms.ColorJitter(brightness=32.0 / 255, saturation=0.5)(img)
-
         img = transforms.ToTensor()(img)
         img = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(img)
         gt_text = torch.from_numpy(gt_text).long()

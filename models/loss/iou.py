@@ -2,6 +2,7 @@ import torch
 
 EPS = 1e-6
 
+
 def iou_single(a, b, mask, n_class):
     valid = mask == 1
     a = a[valid]
@@ -14,6 +15,7 @@ def iou_single(a, b, mask, n_class):
         miou.append(torch.sum(inter) / (torch.sum(union) + EPS))
     miou = sum(miou) / len(miou)
     return miou
+
 
 def iou(a, b, mask, n_class=2, reduce=True):
     batch_size = a.size(0)

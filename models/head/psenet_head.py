@@ -157,14 +157,14 @@ class PSENet_Head(nn.Module):
         # text loss
         selected_masks = ohem_batch(texts, gt_texts, training_masks)
 
-        loss_text = self.text_loss(texts, gt_texts, selected_masks, reduce=False)
-        iou_text = iou((texts > 0).long(), gt_texts, training_masks, reduce=False)
+        loss_text = self.text_loss(texts, gt_texts, selected_masks, reduce=False)  # 实现论文公式（6），分类loss
+        iou_text = iou((texts > 0).long(), gt_texts, training_masks, reduce=False)  # 计算iou
         losses = dict(
             loss_text=loss_text,
             iou_text=iou_text
         )
 
-        # kernel loss
+        # kernel loss 论文的公式（7）
         loss_kernels = []
         selected_masks = gt_texts * training_masks
         for i in range(kernels.size(1)):
