@@ -143,7 +143,7 @@ def main(args):
         checkpoint_path = args.checkpoint
     else:
         cfg_name, _ = osp.splitext(osp.basename(args.config))
-        checkpoint_path = osp.join('checkpoints', cfg_name)
+        checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
     if not osp.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
     print('Checkpoint path: %s.' % checkpoint_path)

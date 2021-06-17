@@ -11,7 +11,7 @@ import math
 import mmcv
 import string
 
-ic15_root_dir = './data/ICDAR2015/Challenge4/'
+ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
 ic15_train_data_dir = ic15_root_dir + 'ch4_training_images/'
 ic15_train_gt_dir = ic15_root_dir + 'ch4_training_localization_transcription_gt/'
 
