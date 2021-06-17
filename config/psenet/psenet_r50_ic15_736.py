@@ -25,7 +25,7 @@ model = dict(
     )
 )
 data = dict(
-    batch_size=16,
+    batch_size=3,
     train=dict(
         type='PSENET_IC15',
         split='train',
