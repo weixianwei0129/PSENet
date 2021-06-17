@@ -60,7 +60,6 @@ class PSENet_Head(nn.Module):
 
         score = score.data.cpu().numpy()[0].astype(np.float32)
         kernels = kernels.data.cpu().numpy()[0].astype(np.uint8)
-
         # kernel_1 = kernels[1]
         # kernel_2 = kernels[2]
         # kernel_3 = kernels[3]
@@ -101,10 +100,8 @@ class PSENet_Head(nn.Module):
         img_size = img_meta['img_size'][0]
 
         label_num = np.max(label) + 1
-        h, w = img_size.numpy()[:2]
-
-        label = cv2.resize(label, (w, h), interpolation=cv2.INTER_NEAREST)
-        score = cv2.resize(score, (w, h), interpolation=cv2.INTER_NEAREST)
+        label = cv2.resize(label, (img_size[1], img_size[0]), interpolation=cv2.INTER_NEAREST)
+        score = cv2.resize(score, (img_size[1], img_size[0]), interpolation=cv2.INTER_NEAREST)
 
         if not self.training and cfg.report_speed:
             torch.cuda.synchronize()

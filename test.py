@@ -46,7 +46,7 @@ def test(test_loader, model, cfg):
         sys.stdout.flush()
 
         # prepare input
-        # data['imgs'] = data['imgs'].cuda()
+        data['imgs'] = data['imgs'].cuda()
         data.update(dict(
             cfg=cfg
         ))
@@ -83,15 +83,14 @@ def main(args):
     )
     # model
     model = build_model(cfg.model)
-    # model = model.cuda()
+    model = model.cuda()
 
     if args.checkpoint is not None:
         if os.path.isfile(args.checkpoint):
             print("Loading model and optimizer from checkpoint '{}'".format(args.checkpoint))
             sys.stdout.flush()
 
-            checkpoint = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
-            # checkpoint = torch.load(args.checkpoint)
+            checkpoint = torch.load(args.checkpoint)
 
             d = dict()
             for key, value in checkpoint['state_dict'].items():
