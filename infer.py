@@ -94,7 +94,8 @@ def main(args):
     model = fuse_module(model)
     model.eval()
 
-    all_path = glob.glob("D:/wxw/PSENet/data/ICDAR2015/Challenge4/ch4_test_images/*.jpg")
+    # all_path = glob.glob("D:/wxw/PSENet/data/ICDAR2015/Challenge4/ch4_test_images/*.jpg")
+    all_path = glob.glob("D:/dataset/pse_dataset/dataset/imgs/*")
     print("total: ", len(all_path))
     for idx, path in enumerate(all_path):
         data = pre_process(path)
