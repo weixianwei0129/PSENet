@@ -10,8 +10,8 @@ import Polygon as plg
 import math
 import mmcv
 
-# ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
-ic15_root_dir = "D:/dataset/pse_dataset/icdar15/"
+ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
+# ic15_root_dir = "D:/dataset/pse_dataset/icdar15/"
 ic15_train_data_dir = ic15_root_dir + 'ch4_training_images/'
 ic15_train_gt_dir = ic15_root_dir + 'ch4_training_localization_transcription_gt/'
 
@@ -266,7 +266,7 @@ class PSENET_IC15(data.Dataset):
             img_paths = []
             gt_paths = []
             # fixme 训练数据的数量
-            for idx, img_name in enumerate(img_names[:10]):
+            for idx, img_name in enumerate(img_names[:30]):
                 img_path = data_dir + img_name
                 img_paths.append(img_path)
 

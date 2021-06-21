@@ -65,7 +65,8 @@ def train(train_loader, model, optimizer, epoch, start_iter, cfg):
         loss_kernels = torch.mean(outputs['loss_kernels'])
         losses_kernels.update(loss_kernels.item())
 
-        loss = loss_text + loss_kernels
+        # 论文公式（4）
+        loss = 0.7 * loss_text + 0.3 * loss_kernels
 
         iou_text = torch.mean(outputs['iou_text'])
         ious_text.update(iou_text.item())
@@ -144,8 +145,8 @@ def main(args):
         checkpoint_path = args.checkpoint
     else:
         cfg_name, _ = osp.splitext(osp.basename(args.config))
-        checkpoint_path = osp.join('D:/models/psenet/train_models', cfg_name)
-        # checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
+        # checkpoint_path = osp.join('D:/models/psenet/train_models', cfg_name)
+        checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
     if not osp.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
     print('Checkpoint path: %s.' % checkpoint_path)
@@ -157,7 +158,7 @@ def main(args):
         data_loader,
         batch_size=cfg.data.batch_size,
         shuffle=True,
-        num_workers=1,
+        num_workers=8,
         drop_last=True,
         pin_memory=True
     )
@@ -193,6 +194,10 @@ def main(args):
         start_iter = checkpoint['iter']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        
+    print(f"restore from checkpoints/checkpoint_ic15_736.pth.tar!")
+    checkpoint = torch.load('checkpoints/checkpoint_ic15_736.pth.tar')
+    model.load_state_dict(checkpoint['state_dict'])
 
     for epoch in range(start_epoch, cfg.train_cfg.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, cfg.train_cfg.epoch))
