@@ -10,13 +10,13 @@ import Polygon as plg
 import math
 import mmcv
 
-ic15_root_dir = '/data/weixianwei/psenet/icdar15/'
-# ic15_root_dir = "D:/dataset/pse_dataset/icdar15/"
-ic15_train_data_dir = ic15_root_dir + 'ch4_training_images/'
-ic15_train_gt_dir = ic15_root_dir + 'ch4_training_localization_transcription_gt/'
+ic15_root_dir = '/data/weixianwei/psenet/ymm_v1.1/'
+# ic15_root_dir = "D:/dataset/pse_dataset/dataset/"
+ic15_train_data_dir = ic15_root_dir + 'imgs/'
+ic15_train_gt_dir = ic15_root_dir + 'labels/'
 
-ic15_test_data_dir = ic15_root_dir + 'ch4_test_images/'
-ic15_test_gt_dir = ic15_root_dir + 'ch4_test_localization_transcription_gt/'
+ic15_test_data_dir = ic15_root_dir + 'imgs/'
+ic15_test_gt_dir = ic15_root_dir + 'labels/'
 
 
 def get_img(img_path, read_type='pil'):

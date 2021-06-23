@@ -89,7 +89,7 @@ def train(train_loader, model, optimizer, epoch, start_iter, cfg):
             output_log = '({batch}/{size}) LR: {lr:.6f} | Batch: {bt:.3f}s | Total: {total:.0f}min | ' \
                          'ETA: {eta:.0f}min | Loss: {loss:.3f} | ' \
                          'Loss(text/kernel): {loss_text:.3f}/{loss_kernel:.3f} ' \
-                         '| IoU(text/kernel): {iou_text:.3f}/{iou_kernel:.3f} | Acc rec: {acc_rec:.3f}'.format(
+                         '| IoU(text/kernel): {iou_text:.3f}/{iou_kernel:.3f} '.format(
                 batch=iter + 1,
                 size=len(train_loader),
                 lr=optimizer.param_groups[0]['lr'],
@@ -101,7 +101,7 @@ def train(train_loader, model, optimizer, epoch, start_iter, cfg):
                 loss=losses.avg,
                 iou_text=ious_text.avg,
                 iou_kernel=ious_kernel.avg,
-                acc_rec=accs_rec.avg,
+                # acc_rec=accs_rec.avg,
             )
             print(output_log)
             sys.stdout.flush()
@@ -194,9 +194,10 @@ def main(args):
         start_iter = checkpoint['iter']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        
-    print(f"restore from checkpoints/checkpoint_ic15_736.pth.tar!")
-    checkpoint = torch.load('checkpoints/checkpoint_ic15_736.pth.tar')
+    
+    restore_path = "/data/weixianwei/psenet/train_models/psenet_r50_ic15_736_v1.1/v1.0_600ep.pth.tar"
+    print(f"restore from {restore_path}!")
+    checkpoint = torch.load(restore_path)
     model.load_state_dict(checkpoint['state_dict'])
 
     for epoch in range(start_epoch, cfg.train_cfg.epoch):
