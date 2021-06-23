@@ -1,7 +1,5 @@
 import glob
-import json
 import os
-import sys
 
 import cv2
 import torch
@@ -13,6 +11,7 @@ import torchvision.transforms as transforms
 
 from models import build_model
 from models.utils import fuse_module
+from post_process.utils import split_and_merge, draw_info
 
 
 def scale_aligned_short(img, short_size=736):
@@ -55,14 +54,12 @@ def pre_process(img_path):
     return data
 
 
-def main(args):
+def get_model(args):
     cfg = Config.fromfile(args.config)
     for d in [cfg, cfg.data.test]:
         d.update(dict(
             report_speed=args.report_speed
         ))
-    print(json.dumps(cfg._cfg_dict, indent=4))
-    # sys.stdout.flush()
 
     device = "cpu" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device!")
@@ -93,38 +90,56 @@ def main(args):
     # fuse conv and bn
     model = fuse_module(model)
     model.eval()
+    return cfg, model
 
+
+def inference(path, cfg, model):
+    data = pre_process(path)
+    data.update(dict(
+        cfg=cfg
+    ))
+    # forward
+    with torch.no_grad():
+        outputs = model(**data)
+
+    # vision
+    image_data = data['imgs'].numpy()
+    image_data = np.transpose(image_data[0], [1, 2, 0])
+    image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data))
+    image_data = (image_data * 255).astype(np.uint8)
+    image_data = image_data[:, :, ::-1]
+    org_img_size = data['img_metas']['org_img_size'][0]
+    image_data = cv2.resize(image_data, (org_img_size[1], org_img_size[0]))
+    return image_data, outputs['bboxes']
+
+
+def main(args):
+    # load model
+    cfg, model = get_model(args)
     all_path = glob.glob("D:/dataset/pse_dataset/test_data/*.jpg")
-    # all_path = glob.glob("D:/dataset/pse_dataset/ymm_v1.0/imgs/*")
+    # do infer
     print("total: ", len(all_path))
     all_path.sort()
     for idx, path in enumerate(all_path):
-        data = pre_process(path)
-        data.update(dict(
-            cfg=cfg
-        ))
-        # forward
-        with torch.no_grad():
-            outputs = model(**data)
+        print("============")
+        image_data, bboxes = inference(path, cfg, model)
 
+        all_text = split_and_merge(bboxes)
         # vision
-        image_data = data['imgs'].numpy()
-        image_data = np.transpose(image_data[0], [1, 2, 0])
-        image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data))
-        image_data = (image_data * 255).astype(np.uint8)
-        image_data = image_data[:, :, ::-1]
-        org_img_size = data['img_metas']['org_img_size'][0]
-        image_data = cv2.resize(image_data, (org_img_size[1], org_img_size[0]))
-        cv2.imwrite("test.jpg", image_data)
-        np.save("bboxes.npy", outputs['bboxes'])
-        for box in outputs['bboxes']:
-            box = np.reshape(box, (-1, 1, 2))
-            image_data = cv2.polylines(image_data, [box], 1, (0, 0, 255))
-        cv2.imshow("image", image_data)
-        # cv2.imwrite(path.replace(".jpg", "_pse.jpg"), image_data)
+        for box in all_text:
+            draw_info(image_data, None, box)
+        cv2.imshow("im", image_data)
         key = cv2.waitKey(0)
         if key == 113:
             exit()
+
+        # for box in outputs:
+        #     box = np.reshape(box, (-1, 1, 2))
+        #     image_data = cv2.polylines(image_data, [box], 1, (0, 0, 255))
+        # cv2.imshow("image", image_data)
+        # key = cv2.waitKey(0)
+        # if key == 113:
+        #     exit()
 
 
 if __name__ == '__main__':
