@@ -69,6 +69,7 @@ def cmp_distance_points(p1, p2):
 
 
 def merge_box(line):
+    line.sort(key=lambda x: x.left[0])
     res = []
     b1 = line.pop(0)
     while line:
@@ -88,36 +89,6 @@ def merge_box(line):
     return res
 
 
-def merge_line(line):
-    obj_list = []
-
-    # op 对每一行的小片段(box)进行处理：
-    line.sort(key=lambda x: x.left[0])
-    obj = []
-    base_box = line[0]
-    # 对每一行的文本进行拼接
-    for box in line:
-        dif_height = abs(box.height - base_box.height)
-        if dif_height < 5:
-            obj.append(box)
-        else:
-            # op
-            obj_list.append(obj)
-            base_box = box
-            obj = [box]
-    if len(obj) != 0:
-        obj_list.append(obj)
-    index = 0
-
-    while index < len(obj_list):
-        obj = obj_list[index]
-        # 对obj进行拼接，如果obj中有一个以上的box，则对其合并
-        if len(obj) > 1:
-            obj_list[index] = merge_box(obj)
-        index += 1
-    return obj_list
-
-
 def split_and_merge(bboxes):
     # 创建BOX类
     box_list = []
@@ -133,25 +104,23 @@ def split_and_merge(bboxes):
     all_lines = []
     same_line = []
     base_box = box_list[0]
+    base_k, base_b = base_box.k, base_box.b
+    # base_center = base_box.center
     for box in box_list:
         # 计算与base box的高度差
-        dif_height = distance_point_to_line(box.center, base_box.k, base_box.b)
-        if dif_height < 1:
-            print(f"dif_height: {dif_height}")
+        dif_height = distance_point_to_line(box.center, base_k, base_b)
+        if dif_height < 3:
+            base_k = (box.k + base_k) / 2
+            base_b = (base_b + box.b) / 2
             same_line.append(box)
         else:
             all_lines += merge_box(same_line)
-            base_box = box
+            base_k = box.k
+            base_b = box.b
             same_line = [box]
     if len(same_line) != 0:
         all_lines += merge_box(same_line)
     return all_lines
-    # print(all_lines)
-    # exit()
-    # all_text = []
-    # for boxes in all_lines:
-    #     all_text.extend(boxes)
-    # return all_text
 
 
 def draw_info(image_data, mask, box, color=(0, 0, 222)):

@@ -128,10 +128,11 @@ def main(args):
         # vision
         for box in all_text:
             draw_info(image_data, None, box)
-        cv2.imshow("im", image_data)
-        key = cv2.waitKey(0)
-        if key == 113:
-            exit()
+        # cv2.imshow("im", image_data)
+        cv2.imwrite(f"{idx}.jpg", image_data)
+        # key = cv2.waitKey(0)
+        # if key == 113:
+        #     exit()
 
         # for box in outputs:
         #     box = np.reshape(box, (-1, 1, 2))
@@ -153,7 +154,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default="checkpoints/checkpoint_600ep.pth.tar"
+        default="checkpoints/v1.1_600ep.pth.tar"
     )
     parser.add_argument('--report_speed', action='store_true')
     args = parser.parse_args()
