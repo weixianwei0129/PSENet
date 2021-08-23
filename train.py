@@ -110,7 +110,7 @@ def train(train_loader, model, optimizer, epoch, start_iter, cfg):
 def adjust_learning_rate(optimizer, dataloader, epoch, iter, cfg):
     schedule = cfg.train_cfg.schedule
     if isinstance(schedule, str):
-        assert schedule == 'polylr', 'Error: schedule should be polylr!'
+        assert schedule == 'poly lr', 'Error: schedule should be poly lr!'
         cur_iter = epoch * len(dataloader) + iter
         max_iter_num = cfg.train_cfg.epoch * len(dataloader)
         lr = cfg.train_cfg.lr * (1 - float(cur_iter) / max_iter_num) ** 0.9
@@ -129,8 +129,7 @@ def save_checkpoint(state, checkpoint_path, cfg):
     file_path = osp.join(checkpoint_path, 'checkpoint.pth.tar')
     torch.save(state, file_path)
 
-    if cfg.data.train.type in ['synth'] or \
-            (state['iter'] == 0 and state['epoch'] > cfg.train_cfg.epoch - 100 and state['epoch'] % 10 == 0):
+    if cfg.data.train.type in ['synth'] or (state['iter'] == 0 and state['epoch'] % 50 == 0):
         file_name = 'checkpoint_%dep.pth.tar' % state['epoch']
         file_path = osp.join(checkpoint_path, file_name)
         torch.save(state, file_path)
@@ -145,10 +144,11 @@ def main(args):
         checkpoint_path = args.checkpoint
     else:
         cfg_name, _ = osp.splitext(osp.basename(args.config))
-        # checkpoint_path = osp.join('D:/models/psenet/train_models', cfg_name)
-        checkpoint_path = osp.join('/data/weixianwei/psenet/train_models', cfg_name)
+        checkpoint_path = osp.join('/data/weixianwei/psenet/models/', cfg_name)
+    
     if not osp.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
+    
     print('Checkpoint path: %s.' % checkpoint_path)
     sys.stdout.flush()
 
@@ -186,19 +186,16 @@ def main(args):
         print('Finetuning from pretrained model %s.' % cfg.train_cfg.pretrain)
         checkpoint = torch.load(cfg.train_cfg.pretrain)
         model.load_state_dict(checkpoint['state_dict'])
-    if args.resume:
-        assert osp.isfile(args.resume), 'Error: no checkpoint directory found!'
-        print('Resuming from checkpoint %s.' % args.resume)
-        checkpoint = torch.load(args.resume)
-        start_epoch = checkpoint['epoch']
-        start_iter = checkpoint['iter']
-        model.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
     
-    restore_path = "/data/weixianwei/psenet/train_models/psenet_r50_ic15_736_v1.1/v1.0_600ep.pth.tar"
-    print(f"restore from {restore_path}!")
-    checkpoint = torch.load(restore_path)
-    model.load_state_dict(checkpoint['state_dict'])
+    if args.resume:
+        # todo 断点训练
+        restore_path = args.resume
+        if not os.path.exists(restore_path):
+            print("there is no restore file: ", restore_path)
+            exit()
+        print(f"restore from {restore_path}!")
+        checkpoint = torch.load(restore_path)
+        model.load_state_dict(checkpoint['state_dict'])
 
     for epoch in range(start_epoch, cfg.train_cfg.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, cfg.train_cfg.epoch))
@@ -216,9 +213,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Hyperparams')
-    parser.add_argument('config', help='config file path')
+    parser.add_argument('config', default="config/psenet/psenet_r50_custom_736.py", help='config file path')
     parser.add_argument('--checkpoint', nargs='?', type=str, default=None)
-    parser.add_argument('--resume', nargs='?', type=str, default=None)
+    parser.add_argument('--resume', nargs='?', type=str,
+                        default="/data/weixianwei/psenet/models/business_photo/"
+                                "psenet_r50_ic15_736_v1.5/checkpoint_600ep.pth.tar")
     args = parser.parse_args()
 
     main(args)

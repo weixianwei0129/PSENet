@@ -6,17 +6,15 @@ import random
 import torchvision.transforms as transforms
 import torch
 import pyclipper
-import Polygon as plg
 import math
 import mmcv
 import imgaug.augmenters as iaa
 
-ic15_root_dir = '/data/weixianwei/psenet/ymm_v1.4/'
-# ic15_root_dir = "D:/dataset/pse_dataset/dataset/"
+ic15_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
 ic15_train_data_dir = ic15_root_dir + 'imgs/'
 ic15_train_gt_dir = ic15_root_dir + 'labels/'
 
-test_root_dir = '/data/weixianwei/psenet/test_online_v1.0/'
+test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
 ic15_test_data_dir = ic15_root_dir + 'imgs/'
 ic15_test_gt_dir = ic15_root_dir + 'labels/'
 
@@ -59,13 +57,11 @@ def perimeter(bbox):
 
 
 def shrink(bboxes, rate, max_shr=20):
-    """
-    """
     rate = rate * rate
     shrinked_bboxes = []
     for bbox in bboxes:
-        area = plg.Polygon(bbox).area()
-        peri = perimeter(bbox)
+        area = cv2.contourArea(bbox)
+        peri = cv2.arcLength(bbox, True)
 
         try:
             pco = pyclipper.PyclipperOffset()
@@ -95,20 +91,19 @@ def get_ann(img, gt_path):
     lines = mmcv.list_from_file(gt_path)
     bboxes = []
     words = []
-    for line in lines:
+    for idx, line in enumerate(lines):
         line = line.encode('utf-8').decode('utf-8-sig')
         line = line.replace('\xef\xbb\xbf\ufeff', '')
         gt = line.split(',')
-        word = gt[8].replace('\r', '').replace('\n', '')
+        word = gt[-1].replace('\r', '').replace('\n', '')
         if word[0] == '#':
             words.append('###')
         else:
             words.append(word)
-        # fixme 四个点,八个值,全部点放进来
-        bbox = [int(gt[i]) for i in range(8)]
-        bbox = np.array(bbox) / ([w * 1.0, h * 1.0] * 4)
+        bbox = [int(x) for x in gt[:-1]]
+        bbox = np.array(bbox) / ([w * 1.0, h * 1.0] * int(len(bbox) / 2))
         bboxes.append(bbox)
-    return np.array(bboxes), words
+    return bboxes, words
 
 
 def random_horizontal_flip(imgs):
@@ -244,7 +239,7 @@ def random_crop_v2(imgs, img_size):
     return imgs
 
 
-class PSENET_IC15(data.Dataset):
+class PSENET_Custom(data.Dataset):
     def __init__(self,
                  split='train',
                  is_transform=False,
@@ -278,17 +273,16 @@ class PSENET_IC15(data.Dataset):
         self.img_paths = []
         self.gt_paths = []
         for data_dir, gt_dir in zip(data_dirs, gt_dirs):
-            img_names = [img_name for img_name in mmcv.utils.scandir(data_dir, '.jpg')]
+            img_names = [img_name for img_name in mmcv.utils.scandir(data_dir, '.JPG')]
             img_names.extend([img_name for img_name in mmcv.utils.scandir(data_dir, '.png')])
 
             img_paths = []
             gt_paths = []
-            # fixme 训练数据的数量
-            for idx, img_name in enumerate(img_names[:30]):
+            for idx, img_name in enumerate(img_names):
                 img_path = data_dir + img_name
                 img_paths.append(img_path)
 
-                gt_name = 'gt_' + img_name.split('.')[0] + '.txt'
+                gt_name = img_name.split('.')[0] + '.TXT'
                 gt_path = gt_dir + gt_name
                 gt_paths.append(gt_path)
 
@@ -303,7 +297,6 @@ class PSENET_IC15(data.Dataset):
             self.gt_paths = (self.gt_paths * extend_scale)[:target_size]
 
         self.max_word_num = 200
-        # self.max_word_len = 32
 
     def __len__(self):
         return len(self.img_paths)
@@ -312,11 +305,12 @@ class PSENET_IC15(data.Dataset):
         img_path = self.img_paths[index]
         gt_path = self.gt_paths[index]
 
-        img = get_img(img_path, self.read_type)
+        img = get_img(img_path, self.read_type)  # (c, w, h)
+        img = random_color_aug(img)
         bboxes, words = get_ann(img, gt_path)
 
         # max line in gt
-        if bboxes.shape[0] > self.max_word_num:
+        if len(bboxes) > self.max_word_num:
             bboxes = bboxes[:self.max_word_num]
             words = words[:self.max_word_num]
 
@@ -325,22 +319,24 @@ class PSENET_IC15(data.Dataset):
 
         gt_instance = np.zeros(img.shape[0:2], dtype='uint8')
         training_mask = np.ones(img.shape[0:2], dtype='uint8')
-        if bboxes.shape[0] > 0:  # line
-            # (N*8) -> (N, 4, 2)
-            bboxes = np.reshape(bboxes * ([img.shape[1], img.shape[0]] * 4),
-                                (bboxes.shape[0], -1, 2)).astype('int32')
-            for i in range(bboxes.shape[0]):
-                cv2.drawContours(gt_instance, [bboxes[i]], -1, i + 1, -1)
-                if words[i] == '###':  # 如果包含看不清楚的文字，则把这块涂黑，不计算
-                    cv2.drawContours(training_mask, [bboxes[i]], -1, 0, -1)
+        pixel_boxes = []
+        for idx, box in enumerate(bboxes):
+            box = np.reshape(box, (-1, 2)) * np.array([img.shape[1], img.shape[0]]).T
+            box = np.int32(box)
+            pixel_boxes.append(box)
+            cv2.fillPoly(gt_instance, [box], idx + 1)
+            if words[idx] == '###':  # 如果包含看不清楚的文字，则把这块涂黑，不计算
+                cv2.fillPoly(training_mask, [box], idx + 1)
+
+        bboxes = pixel_boxes
 
         gt_kernels = []
         for i in range(1, self.kernel_num):
             rate = 1.0 - (1.0 - self.min_scale) / (self.kernel_num - 1) * i
             gt_kernel = np.zeros(img.shape[0:2], dtype='uint8')
             kernel_bboxes = shrink(bboxes, rate)
-            for i in range(bboxes.shape[0]):
-                cv2.drawContours(gt_kernel, [kernel_bboxes[i].astype(int)], -1, 1, -1)
+            for i in range(len(bboxes)):
+                cv2.fillPoly(gt_kernel, [kernel_bboxes[i].astype(int)], 1)
             gt_kernels.append(gt_kernel)
 
         if self.is_transform:
@@ -359,14 +355,14 @@ class PSENET_IC15(data.Dataset):
 
         # # ==================================================
         # cv2.imshow("img", img[:, :, ::-1])
-        # # # print(img.shape)  # torch.Size([3, 736, 736])
-        # # # print(gt_text.shape)  # (736, 736)
-        # # # print(gt_kernels.shape)  # (6, 736, 736)
-        # # # print(training_mask.shape)  # (736, 736)
-        # # for i in range(6):
-        # #     cv2.imshow(f"{i}", gt_kernels[i] * 255)
-        # # cv2.imshow("gt_text", gt_text * 255)
-        # cv2.imshow("training_mask", np.clip(training_mask * 255, 0, 255))
+        # # print(img.shape)  # torch.Size([3, 736, 736])
+        # # print(gt_text.shape)  # (736, 736)
+        # # print(gt_kernels.shape)  # (6, 736, 736)
+        # # print(training_mask.shape)  # (736, 736)
+        # for i in range(6):
+        #     cv2.imshow(f"{i}", gt_kernels[i] * 255)
+        # cv2.imshow("gt_text", gt_text * 255)
+        # # cv2.imshow("training_mask", np.clip(training_mask * 255, 0, 255))
         # key = cv2.waitKey(0)
         # if key == 113:
         #     exit()
@@ -421,3 +417,20 @@ class PSENET_IC15(data.Dataset):
             return self.prepare_train_data(index)
         elif self.split == 'test':
             return self.prepare_test_data(index)
+
+
+if __name__ == '__main__':
+    dataset = PSENET_Custom()
+    print("total: ", len(dataset))
+    loader = data.DataLoader(dataset=dataset, batch_size=2)
+    for data in loader:
+        print(data.keys())
+        # imgs = data['imgs'][0].numpy().transpose((1, 2, 0))
+        # training_masks = data['training_masks'][0].numpy()
+        # gt_texts = data['gt_texts'][0].numpy()
+        # gt_kernels = data['gt_kernels'][0].numpy()
+        # cv2.imshow('img', imgs)
+        # print(np.max(training_masks), np.min(training_masks), training_masks.shape)
+        # # cv2.imshow('train', training_masks)
+        # cv2.waitKey(0)
+        # exit()

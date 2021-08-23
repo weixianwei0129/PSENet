@@ -1,6 +1,6 @@
 import glob
 import os
-
+import time
 import cv2
 import torch
 import argparse
@@ -13,6 +13,8 @@ from models import build_model
 from models.utils import fuse_module
 from post_process.utils import split_and_merge, draw_info
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using {DEVICE} device!")
 
 def scale_aligned_short(img, short_size=736):
     # print('original img_size:', img.shape)
@@ -61,19 +63,16 @@ def get_model(args):
             report_speed=args.report_speed
         ))
 
-    device = "cpu" if torch.cuda.is_available() else "cpu"
-    print(f"Using {device} device!")
-
     # model
     model = build_model(cfg.model)
-    if device == "cuda":
+    if DEVICE == "cuda":
         model = model.cuda()
 
     if args.checkpoint is not None:
         if os.path.isfile(args.checkpoint):
             print("Loading model and optimizer from checkpoint '{}'".format(args.checkpoint))
 
-            if device == "cuda":
+            if DEVICE == "cuda":
                 checkpoint = torch.load(args.checkpoint)
             else:
                 checkpoint = torch.load(args.checkpoint, map_location=lambda storage, loc: storage)
@@ -95,6 +94,8 @@ def get_model(args):
 
 def inference(path, cfg, model):
     data = pre_process(path)
+    if DEVICE == "cuda":
+        data['imgs'] = data['imgs'].cuda()
     data.update(dict(
         cfg=cfg
     ))
@@ -103,6 +104,8 @@ def inference(path, cfg, model):
         outputs = model(**data)
 
     # vision
+    if DEVICE == "cuda":
+        data['imgs'] = data['imgs'].cpu()
     image_data = data['imgs'].numpy()
     image_data = np.transpose(image_data[0], [1, 2, 0])
     image_data = (image_data - np.min(image_data)) / (np.max(image_data) - np.min(image_data))
@@ -116,20 +119,34 @@ def inference(path, cfg, model):
 def main(args):
     # load model
     cfg, model = get_model(args)
-    all_path = glob.glob("D:/dataset/pse_dataset/test_data/*.jpg")
+    # all_path = glob.glob("D:/dataset/pse_dataset/test_data/*.jpg")
+    all_path = glob.glob("/data/weixianwei/psenet/test_data/*.jpg")
     # do infer
     print("total: ", len(all_path))
     all_path.sort()
+    total_time = 0
     for idx, path in enumerate(all_path):
+        basename = os.path.basename(path)
         print("============")
+        t1 = time.time()
+        # infer model
         image_data, bboxes = inference(path, cfg, model)
-
+        # post process
         all_text = split_and_merge(bboxes)
+        print(f"cost Time is {time.time() - t1}")
+        total_time += time.time() - t1
         # vision
-        for box in all_text:
-            draw_info(image_data, None, box)
+        image_data_show = image_data.copy()
+        for box in bboxes:
+            box = np.reshape(box, (-1, 1, 2))
+            cv2.polylines(image_data_show, [box], True, (0, 0, 222), 1)
+        cv2.imwrite(f"tmp/{basename+'_model.jpg'}", image_data_show)
+
+        # for box in all_text:
+        #     draw_info(image_data, None, box)
+        # cv2.imwrite(f"tmp/{basename+'_pst.jpg'}", image_data)
         # cv2.imshow("im", image_data)
-        cv2.imwrite(f"{idx}.jpg", image_data)
+        # cv2.imwrite(f"{idx}.jpg", image_data)
         # key = cv2.waitKey(0)
         # if key == 113:
         #     exit()
@@ -141,7 +158,7 @@ def main(args):
         # key = cv2.waitKey(0)
         # if key == 113:
         #     exit()
-
+    print(f"mean time is {total_time/(1e-4+len(all_path))}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Hyperparams')
@@ -154,7 +171,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '--checkpoint',
         type=str,
-        default="checkpoints/v1.1_600ep.pth.tar"
+        # default="checkpoints/v1.1_600ep.pth.tar",
+        default="/data/weixianwei/psenet/train_models/psenet_r50_ic15_736_v1.1/checkpoint_600ep.pth.tar",
+
     )
     parser.add_argument('--report_speed', action='store_true')
     args = parser.parse_args()

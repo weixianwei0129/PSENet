@@ -27,7 +27,7 @@ model = dict(
 data = dict(
     batch_size=3,
     train=dict(
-        type='PSENET_IC15',
+        type='PSENET_Custom',
         split='train',
         is_transform=True,
         img_size=736,
@@ -37,7 +37,7 @@ data = dict(
         read_type='cv2'
     ),
     test=dict(
-        type='PSENET_IC15',
+        type='PSENET_Custom',
         split='test',
         short_size=736,
         read_type='cv2'
@@ -54,5 +54,5 @@ test_cfg = dict(
     min_area=16,
     kernel_num=7,
     bbox_type='rect',
-    result_path='outputs/submit_ic15.zip'
+    result_path='outputs/submit_custom.zip'
 )

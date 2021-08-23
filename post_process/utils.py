@@ -81,7 +81,7 @@ def merge_box(line):
             b1 = BOX([b1.p0, b1.p1, b2.p0, b2.p1, b2.p2, b2.p3, b1.p2, b1.p3])
             line.pop(0)
         else:
-            print(f"distance: {distance}")
+            # print(f"distance: {distance}")
             # 把b1放入结果中，搜索下一个b1
             res.append(b1)
             b1 = line.pop(0)
