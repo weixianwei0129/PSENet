@@ -1,300 +1,81 @@
+import os
+import cv2
+import glob
+import mmcv
+import torch
 import numpy as np
 from PIL import Image
 from torch.utils import data
-import cv2
-import random
 import torchvision.transforms as transforms
-import torch
-import pyclipper
-import math
-import mmcv
-import imgaug.augmenters as iaa
 
-ic15_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
-ic15_train_data_dir = ic15_root_dir + 'imgs/'
-ic15_train_gt_dir = ic15_root_dir + 'labels/'
+from dataset.utils import shrink
+from dataset.utils import random_scale, random_crop
+from dataset.utils import scale_aligned_short, random_rotate
+from dataset.utils import random_color_aug, random_horizontal_flip
 
-test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
-ic15_test_data_dir = ic15_root_dir + 'imgs/'
-ic15_test_gt_dir = ic15_root_dir + 'labels/'
+train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500'
+train_data_dir = os.path.join(train_root_dir, 'train')
+train_gt_dir = os.path.join(train_root_dir, 'train')
 
+test_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500'
+test_data_dir = os.path.join(train_root_dir, 'test')
+test_gt_dir = os.path.join(train_root_dir, 'test')
 
-# Random aug
-def random_color_aug(image):
-    # jpeg 图像质量
-    sometimes = lambda aug: iaa.Sometimes(0.2, aug)
-    image = sometimes(iaa.JpegCompression(compression=(60, 80)))(image=image)
-    image = sometimes(iaa.AddToHueAndSaturation((-60, 60)))(image=image)
-    k = np.random.randint(3, 8)
-    image = sometimes(iaa.MotionBlur(k, angle=[-90, 90]))(image=image)
-    image = image.astype(np.uint8)
-    return image
+img_postfix = "JPG"
+gt_postfix = "TXT"
 
 
-def get_img(img_path, read_type='pil'):
-    try:
-        if read_type == 'cv2':
-            img = cv2.imread(img_path)
-            img = img[:, :, [2, 1, 0]]
-        elif read_type == 'pil':
-            img = np.array(Image.open(img_path))
-    except Exception as e:
-        print('Cannot read image: %s.' % img_path)
-        raise
+def get_img(img_path):
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
-
-
-def dist(a, b):
-    return np.linalg.norm((a - b), ord=2, axis=0)
-
-
-def perimeter(bbox):
-    peri = 0.0
-    # bbox shape = [4, 2] = [[1,2],[2,3],[4,5],[6,7]]
-    for i in range(bbox.shape[0]):
-        peri += dist(bbox[i], bbox[(i + 1) % bbox.shape[0]])
-    return peri
-
-
-def shrink(bboxes, rate, max_shr=20):
-    rate = rate * rate
-    shrinked_bboxes = []
-    for bbox in bboxes:
-        area = cv2.contourArea(bbox)
-        peri = cv2.arcLength(bbox, True)
-
-        try:
-            pco = pyclipper.PyclipperOffset()
-            pco.AddPath(bbox, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-            offset = min(int(area * (1 - rate) / (peri + 0.001) + 0.5), max_shr)
-
-            shrinked_bbox = pco.Execute(-offset)
-            if len(shrinked_bbox) == 0:
-                shrinked_bboxes.append(bbox)
-                continue
-
-            shrinked_bbox = np.array(shrinked_bbox)[0]
-            if shrinked_bbox.shape[0] <= 2:
-                shrinked_bboxes.append(bbox)
-                continue
-
-            shrinked_bboxes.append(shrinked_bbox)
-        except Exception as e:
-            print('area:', area, 'peri:', peri)
-            shrinked_bboxes.append(bbox)
-
-    return shrinked_bboxes
 
 
 def get_ann(img, gt_path):
     h, w = img.shape[0:2]
-    lines = mmcv.list_from_file(gt_path)
-    bboxes = []
+    lines = open(gt_path, 'r').readlines()
+    text_regions = []
     words = []
     for idx, line in enumerate(lines):
-        line = line.encode('utf-8').decode('utf-8-sig')
-        line = line.replace('\xef\xbb\xbf\ufeff', '')
-        gt = line.split(',')
-        word = gt[-1].replace('\r', '').replace('\n', '')
+        sp = line.strip().split(',')
+        word = sp[-1]
         if word[0] == '#':
             words.append('###')
         else:
             words.append(word)
-        bbox = [int(x) for x in gt[:-1]]
-        bbox = np.array(bbox) / ([w * 1.0, h * 1.0] * int(len(bbox) / 2))
-        bboxes.append(bbox)
-    return bboxes, words
-
-
-def random_horizontal_flip(imgs):
-    if random.random() < 0.5:
-        for i in range(len(imgs)):
-            imgs[i] = np.flip(imgs[i], axis=1).copy()
-    return imgs
-
-
-def random_rotate(imgs):
-    max_angle = 10
-    angle = random.random() * 2 * max_angle - max_angle
-    for i in range(len(imgs)):
-        img = imgs[i]
-        w, h = img.shape[:2]
-        rotation_matrix = cv2.getRotationMatrix2D((h / 2, w / 2), angle, 1)
-        if i == 2:
-            img_rotation = cv2.warpAffine(img, rotation_matrix, (h, w), flags=cv2.INTER_NEAREST, borderValue=1)
-        else:
-            img_rotation = cv2.warpAffine(img, rotation_matrix, (h, w), flags=cv2.INTER_NEAREST, borderValue=0)
-        imgs[i] = img_rotation
-    return imgs
-
-
-def scale_aligned_short(img, short_size=736):
-    # print('original img_size:', img.shape)
-    h, w = img.shape[0:2]
-    scale = short_size * 1.0 / min(h, w)
-    h = int(h * scale + 0.5)
-    w = int(w * scale + 0.5)
-    if h % 32 != 0:
-        h = h + (32 - h % 32)
-    if w % 32 != 0:
-        w = w + (32 - w % 32)
-    img = cv2.resize(img, dsize=(w, h))
-    # print('img_size:', img.shape)
-    return img
-
-
-def scale_aligned(img, h_scale, w_scale):
-    h, w = img.shape[0:2]
-    h = int(h * h_scale + 0.5)
-    w = int(w * w_scale + 0.5)
-    if h % 32 != 0:
-        h = h + (32 - h % 32)
-    if w % 32 != 0:
-        w = w + (32 - w % 32)
-    img = cv2.resize(img, dsize=(w, h))
-    return img
-
-
-def random_scale(img, short_size=736):
-    h, w = img.shape[0:2]
-
-    scale = np.random.choice(np.array([0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]))
-    scale = (scale * short_size) / min(h, w)
-
-    aspect = np.random.choice(np.array([0.9, 0.95, 1.0, 1.05, 1.1]))
-    h_scale = scale * math.sqrt(aspect)
-    w_scale = scale / math.sqrt(aspect)
-
-    img = scale_aligned(img, h_scale, w_scale)
-    return img
-
-
-def random_crop_padding(imgs, target_size):
-    h, w = imgs[0].shape[0:2]
-    t_w, t_h = target_size
-    p_w, p_h = target_size
-    if w == t_w and h == t_h:
-        return imgs
-
-    t_h = t_h if t_h < h else h
-    t_w = t_w if t_w < w else w
-
-    if random.random() > 3.0 / 8.0 and np.max(imgs[1]) > 0:
-        # make sure to crop the text region
-        tl = np.min(np.where(imgs[1] > 0), axis=1) - (t_h, t_w)
-        tl[tl < 0] = 0
-        br = np.max(np.where(imgs[1] > 0), axis=1) - (t_h, t_w)
-        br[br < 0] = 0
-        br[0] = min(br[0], h - t_h)
-        br[1] = min(br[1], w - t_w)
-
-        i = random.randint(tl[0], br[0]) if tl[0] < br[0] else 0
-        j = random.randint(tl[1], br[1]) if tl[1] < br[1] else 0
-    else:
-        i = random.randint(0, h - t_h) if h - t_h > 0 else 0
-        j = random.randint(0, w - t_w) if w - t_w > 0 else 0
-
-    n_imgs = []
-    for idx in range(len(imgs)):
-        if len(imgs[idx].shape) == 3:
-            s3_length = int(imgs[idx].shape[-1])
-            img = imgs[idx][i:i + t_h, j:j + t_w, :]
-            img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT,
-                                       value=tuple(0 for i in range(s3_length)))
-        else:
-            img = imgs[idx][i:i + t_h, j:j + t_w]
-            if idx == 2:
-                img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT, value=(1,))
-            else:
-                img_p = cv2.copyMakeBorder(img, 0, p_h - t_h, 0, p_w - t_w, borderType=cv2.BORDER_CONSTANT, value=(0,))
-        n_imgs.append(img_p)
-    return n_imgs
-
-
-def random_crop_v2(imgs, img_size):
-    h, w = imgs[0].shape[0:2]
-    th, tw = img_size
-    if w == tw and h == th:
-        return imgs
-
-    cnt = 0
-    while cnt < 100:
-        i = random.randint(0, h - th)
-        j = random.randint(0, w - tw)
-        gt_text = imgs[1][i:i + th, j:j + tw].copy()
-        training_mask = imgs[2][i:i + th, j:j + tw].copy()
-        valid_gt_text = gt_text * training_mask
-        if valid_gt_text.sum() > 100:
-            for idx in range(len(imgs)):
-                if len(imgs[idx].shape) == 3:
-                    imgs[idx] = imgs[idx][i:i + th, j:j + tw, :]
-                else:
-                    imgs[idx] = imgs[idx][i:i + th, j:j + tw]
-            return imgs
-        else:
-            cnt += 1
-    # when crop attempt failed, use the whole img
-    for idx in range(len(imgs)):
-        imgs[idx] = cv2.resize(imgs[idx], dsize=(tw, th))
-    return imgs
+        location = [int(x) for x in sp[:-1]]
+        location = np.array(location) / ([w * 1.0, h * 1.0] * int(len(location) / 2))
+        text_regions.append(location)
+    return text_regions, words
 
 
 class PSENET_Custom(data.Dataset):
     def __init__(self,
-                 split='train',
+                 data_type='train',
                  is_transform=False,
-                 img_size=None,
                  short_size=736,
-                 kernel_num=7,
-                 min_scale=0.4,
-                 with_rec=False,
-                 read_type='pil',
-                 report_speed=False):
-        self.split = split
+                 kernel_num=6,
+                 min_scale=0.4):
+        self.data_type = data_type
         self.is_transform = is_transform
 
-        self.img_size = img_size if (img_size is None or isinstance(img_size, tuple)) else (img_size, img_size)
         self.short_size = short_size
-        self.with_rec = with_rec
         self.kernel_num = kernel_num
         self.min_scale = min_scale
-        self.read_type = read_type
 
-        if split == 'train':
-            data_dirs = [ic15_train_data_dir]
-            gt_dirs = [ic15_train_gt_dir]
-        elif split == 'test':
-            data_dirs = [ic15_test_data_dir]
-            gt_dirs = [ic15_test_gt_dir]
+        if self.data_type == 'train':
+            data_pattern = os.path.join(train_data_dir, f"*.{img_postfix}")
+            gt_pattern = os.path.join(train_gt_dir, f"*.{gt_postfix}")
+        elif self.data_type == 'test':
+            data_pattern = os.path.join(test_data_dir, f"*.{img_postfix}")
+            gt_pattern = os.path.join(test_gt_dir, f"*.{gt_postfix}")
         else:
-            print('Error: split must be train or test!')
+            print('Error: data_type must be train or test!')
             raise
-
-        self.img_paths = []
-        self.gt_paths = []
-        for data_dir, gt_dir in zip(data_dirs, gt_dirs):
-            img_names = [img_name for img_name in mmcv.utils.scandir(data_dir, '.JPG')]
-            img_names.extend([img_name for img_name in mmcv.utils.scandir(data_dir, '.png')])
-
-            img_paths = []
-            gt_paths = []
-            for idx, img_name in enumerate(img_names):
-                img_path = data_dir + img_name
-                img_paths.append(img_path)
-
-                gt_name = img_name.split('.')[0] + '.TXT'
-                gt_path = gt_dir + gt_name
-                gt_paths.append(gt_path)
-
-            self.img_paths.extend(img_paths)
-            self.gt_paths.extend(gt_paths)
-
-        # sample for speed test
-        if report_speed:
-            target_size = 3000
-            extend_scale = (target_size + len(self.img_paths) - 1) // len(self.img_paths)
-            self.img_paths = (self.img_paths * extend_scale)[:target_size]
-            self.gt_paths = (self.gt_paths * extend_scale)[:target_size]
+        self.img_paths = glob.glob(data_pattern)
+        self.img_paths.sort()
+        self.gt_paths = glob.glob(gt_pattern)
+        self.gt_paths.sort()
 
         self.max_word_num = 200
 
@@ -305,73 +86,54 @@ class PSENET_Custom(data.Dataset):
         img_path = self.img_paths[index]
         gt_path = self.gt_paths[index]
 
-        img = get_img(img_path, self.read_type)  # (c, w, h)
-        img = random_color_aug(img)
-        bboxes, words = get_ann(img, gt_path)
+        img = get_img(img_path)  # (h,w,c-rgb)
+        text_regions, words = get_ann(img, gt_path)
 
-        # max line in gt
-        if len(bboxes) > self.max_word_num:
-            bboxes = bboxes[:self.max_word_num]
-            words = words[:self.max_word_num]
+        # =========数据增强=========
+        img = random_scale(img, self.short_size)
+        height, width = img.shape[:2]
 
-        if self.is_transform:
-            img = random_scale(img, self.short_size)
-
-        gt_instance = np.zeros(img.shape[0:2], dtype='uint8')
-        training_mask = np.ones(img.shape[0:2], dtype='uint8')
-        pixel_boxes = []
-        for idx, box in enumerate(bboxes):
-            box = np.reshape(box, (-1, 2)) * np.array([img.shape[1], img.shape[0]]).T
-            box = np.int32(box)
-            pixel_boxes.append(box)
-            cv2.fillPoly(gt_instance, [box], idx + 1)
-            if words[idx] == '###':  # 如果包含看不清楚的文字，则把这块涂黑，不计算
-                cv2.fillPoly(training_mask, [box], idx + 1)
-
-        bboxes = pixel_boxes
+        # =======构建label map=======
+        # 记录全部的文本区域: 有文本为[文本的序号], 没有文本为0
+        gt_instance = np.zeros((height, width), dtype='uint8')
+        # 记录难识别文本的区域: 难识别的文本为0, 其他为1
+        training_mask = np.ones((height, width), dtype='uint8')
+        for idx, points in enumerate(text_regions):
+            points = np.reshape(points, (-1, 2)) * np.array([width, height]).T
+            points = np.int32(points)
+            text_regions[idx] = points
+            cv2.fillPoly(gt_instance, [points], idx + 1)
+            if words[idx] == '###':
+                cv2.fillPoly(training_mask, [points], 0)
 
         gt_kernels = []
-        for i in range(1, self.kernel_num):
+        for i in range(1, self.kernel_num + 1):
+            gt_kernel = np.zeros((height, width), dtype='uint8')
+
             rate = 1.0 - (1.0 - self.min_scale) / (self.kernel_num - 1) * i
-            gt_kernel = np.zeros(img.shape[0:2], dtype='uint8')
-            kernel_bboxes = shrink(bboxes, rate)
-            for i in range(len(bboxes)):
-                cv2.fillPoly(gt_kernel, [kernel_bboxes[i].astype(int)], 1)
+            kernel_text_regions = shrink(text_regions, rate)
+
+            for kernel_points in kernel_text_regions:
+                cv2.fillPoly(gt_kernel, [kernel_points.astype(int)], 1)
             gt_kernels.append(gt_kernel)
 
-        if self.is_transform:
-            imgs = [img, gt_instance, training_mask]
-            imgs.extend(gt_kernels)
+        # =========数据增强=========
+        img = random_color_aug(img)
+        maps = [img, gt_instance, training_mask] + gt_kernels
+        maps.extend(gt_kernels)
 
-            if not self.with_rec:
-                imgs = random_horizontal_flip(imgs)
-            imgs = random_rotate(imgs)
-            imgs = random_crop_padding(imgs, self.img_size)
-            img, gt_instance, training_mask, gt_kernels = imgs[0], imgs[1], imgs[2], imgs[3:]
+        maps = random_rotate(maps)
+        # maps = random_crop(maps)
+        for i in range(len(maps)):
+            maps[i] = cv2.resize(maps[i], (self.short_size, self.short_size))
+        img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
 
+        # gt_text 不区分文本实例
         gt_text = gt_instance.copy()
         gt_text[gt_text > 0] = 1
         gt_kernels = np.array(gt_kernels)
 
-        # # ==================================================
-        # cv2.imshow("img", img[:, :, ::-1])
-        # # print(img.shape)  # torch.Size([3, 736, 736])
-        # # print(gt_text.shape)  # (736, 736)
-        # # print(gt_kernels.shape)  # (6, 736, 736)
-        # # print(training_mask.shape)  # (736, 736)
-        # for i in range(6):
-        #     cv2.imshow(f"{i}", gt_kernels[i] * 255)
-        # cv2.imshow("gt_text", gt_text * 255)
-        # # cv2.imshow("training_mask", np.clip(training_mask * 255, 0, 255))
-        # key = cv2.waitKey(0)
-        # if key == 113:
-        #     exit()
-        # # ==================================================
-
         img = Image.fromarray(img)
-        img = img.convert('RGB')
-        if self.is_transform:
-            img = transforms.ColorJitter(brightness=32.0 / 255, saturation=0.5)(img)
         img = transforms.ToTensor()(img)
         img = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(img)
         gt_text = torch.from_numpy(gt_text).long()
@@ -390,12 +152,11 @@ class PSENET_Custom(data.Dataset):
     def prepare_test_data(self, index):
         img_path = self.img_paths[index]
 
-        img = get_img(img_path, self.read_type)
+        img = get_img(img_path)
         img_meta = dict(
             org_img_size=np.array(img.shape[:2])
         )
-
-        img = scale_aligned_short(img, self.short_size)
+        img = cv2.resize(img, (self.short_size, self.short_size))
         img_meta.update(dict(
             img_size=np.array(img.shape[:2])
         ))
@@ -409,28 +170,33 @@ class PSENET_Custom(data.Dataset):
             imgs=img,
             img_metas=img_meta
         )
-
         return data
 
     def __getitem__(self, index):
-        if self.split == 'train':
+        if self.data_type == 'train':
             return self.prepare_train_data(index)
-        elif self.split == 'test':
+        elif self.data_type == 'test':
             return self.prepare_test_data(index)
 
 
 if __name__ == '__main__':
-    dataset = PSENET_Custom()
+    dataset = PSENET_Custom(data_type='train')
     print("total: ", len(dataset))
-    loader = data.DataLoader(dataset=dataset, batch_size=2)
+    batch_size = 2
+    loader = data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+    )
     for data in loader:
-        print(data.keys())
-        # imgs = data['imgs'][0].numpy().transpose((1, 2, 0))
-        # training_masks = data['training_masks'][0].numpy()
-        # gt_texts = data['gt_texts'][0].numpy()
-        # gt_kernels = data['gt_kernels'][0].numpy()
-        # cv2.imshow('img', imgs)
-        # print(np.max(training_masks), np.min(training_masks), training_masks.shape)
-        # # cv2.imshow('train', training_masks)
-        # cv2.waitKey(0)
-        # exit()
+        for b in range(batch_size):
+            img = data['imgs'][b].numpy().transpose((1, 2, 0))[..., ::-1]
+            img = (img - np.min(img)) / (np.max(img) - np.min(img))
+            gt_text = (data['gt_texts'][b].numpy() * 255).astype(np.uint8)
+            gt_kernels = data['gt_kernels'][b].numpy()
+            gt_kernels = (np.concatenate(gt_kernels, axis=0) * 255).astype(np.uint8)
+            mask = np.where(gt_text[:, :, None] > 0, img, 0)
+            cv2.imshow("img", img)
+            cv2.imshow("gt_text", gt_text)
+            cv2.imshow("gt_kernels", gt_kernels)
+            cv2.imshow("mask", mask)
+            cv2.waitKey(0)

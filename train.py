@@ -145,10 +145,10 @@ def main(args):
     else:
         cfg_name, _ = osp.splitext(osp.basename(args.config))
         checkpoint_path = osp.join('/data/weixianwei/psenet/models/', cfg_name)
-    
+
     if not osp.isdir(checkpoint_path):
         os.makedirs(checkpoint_path)
-    
+
     print('Checkpoint path: %s.' % checkpoint_path)
     sys.stdout.flush()
 
@@ -186,7 +186,7 @@ def main(args):
         print('Finetuning from pretrained model %s.' % cfg.train_cfg.pretrain)
         checkpoint = torch.load(cfg.train_cfg.pretrain)
         model.load_state_dict(checkpoint['state_dict'])
-    
+
     if args.resume:
         # todo 断点训练
         restore_path = args.resume
@@ -213,11 +213,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Hyperparams')
-    parser.add_argument('config', default="config/psenet/psenet_r50_custom_736.py", help='config file path')
+    parser.add_argument('config', default="uniform_v1.0.0.py", help='config file path')
     parser.add_argument('--checkpoint', nargs='?', type=str, default=None)
     parser.add_argument('--resume', nargs='?', type=str,
-                        default="/data/weixianwei/psenet/models/business_photo/"
-                                "psenet_r50_ic15_736_v1.5/checkpoint_600ep.pth.tar")
+                        default="checkpoints/uniform_500ep.pth.tar")
     args = parser.parse_args()
 
     main(args)

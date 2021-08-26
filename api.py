@@ -16,6 +16,7 @@ from post_process.utils import split_and_merge, draw_info
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {DEVICE} device!")
 
+
 def scale_aligned_short(img, short_size=736):
     # print('original img_size:', img.shape)
     h, w = img.shape[0:2]
@@ -113,26 +114,40 @@ def inference(path, cfg, model):
     image_data = image_data[:, :, ::-1]
     org_img_size = data['img_metas']['org_img_size'][0]
     image_data = cv2.resize(image_data, (org_img_size[1], org_img_size[0]))
-    return image_data, outputs['bboxes']
+    info = {}
+    info.update(
+        image_data=image_data,
+        outputs=outputs,
+    )
+    return info
 
 
 def main(args):
     # load model
     cfg, model = get_model(args)
     # all_path = glob.glob("D:/dataset/pse_dataset/test_data/*.jpg")
-    all_path = glob.glob("/data/weixianwei/psenet/test_data/*.jpg")
+    all_path = glob.glob("/Users/weixianwei/Dataset/open/MSRA-TD500/test/*.JPG")
     # do infer
     print("total: ", len(all_path))
     all_path.sort()
     total_time = 0
     for idx, path in enumerate(all_path):
-        basename = os.path.basename(path)
         print("============")
         t1 = time.time()
         # infer model
-        image_data, bboxes = inference(path, cfg, model)
+        info = inference(path, cfg, model)
+        image_data = info['image_data']
+        outputs = info['outputs']
+        bboxes = outputs["bboxes"]
+        scores = outputs['scores']
+        label_map = outputs['label_map']
+        label_map = (label_map - np.min(label_map)) / (np.max(label_map) - np.min(label_map))
+        score_map = outputs['score_map']
+        cv2.imshow("label", label_map)
+        cv2.imshow("score", score_map)
+
+        print(len(bboxes), len(scores))
         # post process
-        all_text = split_and_merge(bboxes)
         print(f"cost Time is {time.time() - t1}")
         total_time += time.time() - t1
         # vision
@@ -140,25 +155,12 @@ def main(args):
         for box in bboxes:
             box = np.reshape(box, (-1, 1, 2))
             cv2.polylines(image_data_show, [box], True, (0, 0, 222), 1)
-        cv2.imwrite(f"tmp/{basename+'_model.jpg'}", image_data_show)
+        cv2.imshow("image", image_data_show)
+        key = cv2.waitKey(0)
+        if key == 113:
+            exit()
+    print(f"mean time is {total_time / (1e-4 + len(all_path))}")
 
-        # for box in all_text:
-        #     draw_info(image_data, None, box)
-        # cv2.imwrite(f"tmp/{basename+'_pst.jpg'}", image_data)
-        # cv2.imshow("im", image_data)
-        # cv2.imwrite(f"{idx}.jpg", image_data)
-        # key = cv2.waitKey(0)
-        # if key == 113:
-        #     exit()
-
-        # for box in outputs:
-        #     box = np.reshape(box, (-1, 1, 2))
-        #     image_data = cv2.polylines(image_data, [box], 1, (0, 0, 255))
-        # cv2.imshow("image", image_data)
-        # key = cv2.waitKey(0)
-        # if key == 113:
-        #     exit()
-    print(f"mean time is {total_time/(1e-4+len(all_path))}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Hyperparams')
@@ -166,13 +168,13 @@ if __name__ == '__main__':
         '--config',
         type=str,
         help='config file path',
-        default="config/psenet/psenet_r50_ic15_736.py"
+        default="config/psenet/psenet_r50_custom_736.py"
     )
     parser.add_argument(
         '--checkpoint',
         type=str,
         # default="checkpoints/v1.1_600ep.pth.tar",
-        default="/data/weixianwei/psenet/train_models/psenet_r50_ic15_736_v1.1/checkpoint_600ep.pth.tar",
+        default="/Users/weixianwei/Models/psenet/psenet_r50_custom_736/checkpoint_500ep.pth.tar",
 
     )
     parser.add_argument('--report_speed', action='store_true')

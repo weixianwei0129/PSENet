@@ -11,7 +11,7 @@ import math
 import mmcv
 import imgaug.augmenters as iaa
 
-ic15_root_dir = '/data/weixianwei/psenet/ymm_v1.4/'
+ic15_root_dir = '/Users/weixianwei/Dataset/ymm/Texts/psenet/ymm_v1.4/'
 # ic15_root_dir = "D:/dataset/pse_dataset/dataset/"
 ic15_train_data_dir = ic15_root_dir + 'imgs/'
 ic15_train_gt_dir = ic15_root_dir + 'labels/'
