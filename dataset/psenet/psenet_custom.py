@@ -54,7 +54,7 @@ class PSENET_Custom(data.Dataset):
                  data_type='train',
                  is_transform=False,
                  short_size=736,
-                 kernel_num=6,
+                 kernel_num=7,
                  min_scale=0.4):
         self.data_type = data_type
         self.is_transform = is_transform
@@ -107,7 +107,7 @@ class PSENET_Custom(data.Dataset):
                 cv2.fillPoly(training_mask, [points], 0)
 
         gt_kernels = []
-        for i in range(1, self.kernel_num + 1):
+        for i in range(1, self.kernel_num):
             gt_kernel = np.zeros((height, width), dtype='uint8')
 
             rate = 1.0 - (1.0 - self.min_scale) / (self.kernel_num - 1) * i
