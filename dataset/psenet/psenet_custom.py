@@ -1,18 +1,16 @@
 import os
 import cv2
 import glob
-import mmcv
 import torch
 import numpy as np
 from PIL import Image
 from torch.utils import data
 import torchvision.transforms as transforms
 
-from dataset.utils import shrink
-from dataset.utils import random_scale, random_crop
-from dataset.utils import scale_aligned_short, random_rotate
-from dataset.utils import random_color_aug, random_horizontal_flip
+from dataset.utils import shrink, scale_aligned_short, resize_h
+from dataset.utils import random_color_aug, random_rotate
 
+np.random.seed(123344)
 train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500'
 train_data_dir = os.path.join(train_root_dir, 'train')
 train_gt_dir = os.path.join(train_root_dir, 'train')
@@ -32,7 +30,13 @@ def get_img(img_path):
 
 
 def get_ann(img, gt_path):
-    h, w = img.shape[0:2]
+    """
+    如果img is None, 则返回像素坐标
+    """
+    if img is None:
+        h, w = 1.0, 1.0
+    else:
+        h, w = img.shape[0:2]
     lines = open(gt_path, 'r').readlines()
     text_regions = []
     words = []
@@ -76,22 +80,25 @@ class PSENET_Custom(data.Dataset):
         self.img_paths.sort()
         self.gt_paths = glob.glob(gt_pattern)
         self.gt_paths.sort()
-
-        self.max_word_num = 200
+        assert len(self.gt_paths) == len(self.img_paths)
 
     def __len__(self):
         return len(self.img_paths)
 
     def prepare_train_data(self, index):
-        img_path = self.img_paths[index]
-        gt_path = self.gt_paths[index]
 
-        img = get_img(img_path)  # (h,w,c-rgb)
-        text_regions, words = get_ann(img, gt_path)
+        if np.random.uniform(0, 10) > 0:
+            img, text_regions, words = self.mosaic(index)
+        else:
+            img_path = self.img_paths[index]
+            gt_path = self.gt_paths[index]
+            img = get_img(img_path)  # (h,w,c-rgb)
+            text_regions, words = get_ann(img, gt_path)
 
-        # =========数据增强=========
-        img = random_scale(img, self.short_size)
+        img = cv2.resize(img, (self.short_size, self.short_size))
         height, width = img.shape[:2]
+        # =========数据增强=========
+        # mosaic
 
         # =======构建label map=======
         # 记录全部的文本区域: 有文本为[文本的序号], 没有文本为0
@@ -121,11 +128,7 @@ class PSENET_Custom(data.Dataset):
         img = random_color_aug(img)
         maps = [img, gt_instance, training_mask] + gt_kernels
         maps.extend(gt_kernels)
-
         maps = random_rotate(maps)
-        # maps = random_crop(maps)
-        for i in range(len(maps)):
-            maps[i] = cv2.resize(maps[i], (self.short_size, self.short_size))
         img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
 
         # gt_text 不区分文本实例
@@ -177,6 +180,54 @@ class PSENET_Custom(data.Dataset):
             return self.prepare_train_data(index)
         elif self.data_type == 'test':
             return self.prepare_test_data(index)
+
+    def mosaic(self, index):
+        """
+        田字格画布用a表示
+        4张图片用b表示
+
+        """
+        text_regions4 = []
+        words4 = []
+        s = self.short_size
+        xc, yc = np.random.uniform(s // 2, s * 3 // 2, size=[2, ]).astype(int)
+        indices = [index] + np.random.choice(range(len(self.img_paths)), size=(3,)).tolist()
+        for i, index in enumerate(indices):
+            img = get_img(self.img_paths[index])
+            texts_regions, words = get_ann(img, self.gt_paths[index])
+            img = scale_aligned_short(img, int(self.short_size * np.random.uniform(0.9, 2)))
+            h, w, c = img.shape
+
+            if i == 0:  # a图的左上图, 图b右下角与中心对齐
+                img4 = np.full((s * 2, s * 2, 3), 114, dtype=np.uint8)
+                x1a, y1a, x2a, y2a = max(0, xc - w), max(0, yc - h), xc, yc
+                wa, ha = x2a - x1a, y2a - y1a
+                x1b, y1b, x2b, y2b = w - wa, h - ha, w, h
+            elif i == 1:  # a图的右上图, 图片b左下角与中心对齐
+                x1a, y1a, x2a, y2a = xc, max(0, yc - h), min(s * 2, xc + w), yc
+                wa, ha = x2a - x1a, y2a - y1a
+                x1b, y1b, x2b, y2b = 0, h - ha, min(w, wa), h
+            elif i == 2:  # a图的左下图, 图片b的右上角与中心对齐
+                x1a, y1a, x2a, y2a = max(0, xc - w), yc, xc, min(s * 2, yc + h)
+                wa, ha = x2a - x1a, y2a - y1a
+                x1b, y1b, x2b, y2b = w - wa, 0, w, min(ha, h)
+            elif i == 3:  # a图右下图, 图b的左上角与中心对齐
+                x1a, y1a, x2a, y2a = xc, yc, min(s * 2, xc + w), min(s * 2, yc + h)
+                wa, ha = x2a - x1a, y2a - y1a
+                x1b, y1b, x2b, y2b = 0, 0, min(w, wa), min(h, ha)
+            img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]
+            padw = x1a - x1b
+            padh = y1a - y1b
+
+            # Labels
+            for points, word in zip(texts_regions, words):
+                num = points.shape[0] // 2
+                points = points * np.array([w, h] * num) + np.array([padw, padh] * num)
+                points = points / np.array([s * 2, s * 2] * num)
+                text_regions4.append(points)
+                words4.append(word)
+
+        return img4, text_regions4, words4
 
 
 if __name__ == '__main__':

@@ -61,6 +61,12 @@ def scale_aligned_short(img, short_size=736):
     return img
 
 
+def resize_h(img, rh):
+    h, w = img.shape[:2]
+    rw = int(np.ceil((w / h) * rh / 32) * 32)
+    return cv2.resize(img, (rw, rh))
+
+
 def scale_aligned(img, h_scale, w_scale):
     h, w = img.shape[0:2]
     h = int(h * h_scale + 0.5)
