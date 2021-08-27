@@ -9,7 +9,7 @@ import time
 import json
 from mmcv import Config
 
-from dataset import build_data_loader
+from dataset.polygon import PolygonDataSet
 from models import build_model
 from utils import AverageMeter
 
@@ -153,7 +153,7 @@ def main(args):
     sys.stdout.flush()
 
     # data loader
-    data_loader = build_data_loader(cfg.data.train)
+    data_loader = PolygonDataSet('train', )
     train_loader = torch.utils.data.DataLoader(
         data_loader,
         batch_size=cfg.data.batch_size,
