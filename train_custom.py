@@ -9,6 +9,7 @@ import argparse
 import numpy as np
 from easydict import EasyDict
 from torchvision.utils import make_grid
+import torchvision.transforms as transforms
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -23,6 +24,8 @@ np.random.seed(123456)
 random.seed(123456)
 cuda = torch.cuda.is_available()
 
+def norm_img(img):
+    return (img-img.min()) / (img.max()-img.min())
 
 def color_str(string, color='blue'):
     colors = {'black': '\033[30m',  # basic colors
@@ -46,6 +49,13 @@ def color_str(string, color='blue'):
               'underline': '\033[4m'}
     return f"{colors.get(color, colors['red'])}{string}{colors['end']}"
 
+
+def concat_img(imgs, gt_texts, gt_kernels):
+    idx = np.random.randint(0, imgs.shape[0])
+    concat = [norm_img(imgs[idx]), torch.stack([gt_texts[idx]]*3,axis=0)]
+    for i in range(gt_kernels.shape[1]):
+        concat.append(torch.stack([gt_kernels[idx, i, ...]]*3,axis=0))
+    return torch.cat(concat, axis=2)
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
     model.train()
@@ -121,11 +131,12 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         # print log
         if iter % 20 == 0:
             step = epoch * len(train_loader) + iter
-
-            writer.add_image('img', make_grid(imgs), step)
-            writer.add_image('gt_texts', make_grid(gt_texts), step)
-            for i, kernel in enumerate(gt_kernels):
-                writer.add_image(f'gt_kernel_{i}', make_grid(kernel), step)
+            # ====Summery====
+            # idx = np.random.randint(0, imgs.shape[0])
+            writer.add_image('img', concat_img(imgs, gt_texts, gt_kernels), step)
+            # writer.add_image('gt_texts', gt_texts[idx][None, ...], step)
+            # for i in range(gt_kernels.shape[1]):
+            #     writer.add_image(f'gt_kernel_b{i}', gt_kernels[idx, i, ...][None, ...], step)
             writer.add_scalar('loss', losses.avg, step)
             writer.add_scalar('text loss', losses_text.avg, step)
             writer.add_scalar('kernel loss', losses_kernels.avg, step)
