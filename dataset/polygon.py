@@ -7,7 +7,7 @@ from PIL import Image
 from torch.utils import data
 import torchvision.transforms as transforms
 
-from dataset.utils import shrink, scale_aligned_short, resize_h
+from dataset.utils import shrink, scale_aligned_short
 from dataset.utils import random_color_aug, random_rotate
 
 train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
@@ -82,9 +82,10 @@ class PolygonDataSet(data.Dataset):
     def __len__(self):
         return len(self.img_paths)
 
-    def prepare_train_data(self, index):
+    def __getitem__(self, index):
 
-        if np.random.uniform(0, 10) > 10:
+        if np.random.uniform(0, 10) > 10 and self.data_type != 'test':
+            # mosaic
             img, text_regions, words = self.mosaic(index)
         else:
             img_path = self.img_paths[index]
@@ -92,10 +93,11 @@ class PolygonDataSet(data.Dataset):
             img = get_img(img_path)  # (h,w,c-rgb)
             text_regions, words = get_ann(img, gt_path)
 
-        img = cv2.resize(img, (self.short_size, self.short_size))
+        if self.data_type == 'train':
+            img = cv2.resize(img, (self.short_size, self.short_size))
+        else:
+            img = scale_aligned_short(img, self.short_size)
         height, width = img.shape[:2]
-        # =========数据增强=========
-        # mosaic
 
         # =======构建label map=======
         # 记录全部的文本区域: 有文本为[文本的序号], 没有文本为0
@@ -122,13 +124,14 @@ class PolygonDataSet(data.Dataset):
             gt_kernels.append(gt_kernel)
 
         # =========数据增强=========
-        if np.random.uniform(0, 10) > 5:
-            img = random_color_aug(img)
-        maps = [img, gt_instance, training_mask] + gt_kernels
-        maps.extend(gt_kernels)
-        if np.random.uniform(0, 10) > 5:
-            maps = random_rotate(maps)
-        img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
+        if self.data_type == 'train':
+            if np.random.uniform(0, 10) > 5:
+                img = random_color_aug(img)
+            maps = [img, gt_instance, training_mask] + gt_kernels
+            maps.extend(gt_kernels)
+            if np.random.uniform(0, 10) > 5:
+                maps = random_rotate(maps)
+            img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
 
         # gt_text 不区分文本实例
         gt_text = gt_instance.copy()
@@ -148,37 +151,7 @@ class PolygonDataSet(data.Dataset):
             gt_kernels=gt_kernels,
             training_masks=training_mask,
         )
-
         return data
-
-    def prepare_test_data(self, index):
-        img_path = self.img_paths[index]
-
-        img = get_img(img_path)
-        img_meta = dict(
-            org_img_size=np.array(img.shape[:2])
-        )
-        img = cv2.resize(img, (self.short_size, self.short_size))
-        img_meta.update(dict(
-            img_size=np.array(img.shape[:2])
-        ))
-
-        img = Image.fromarray(img)
-        img = img.convert('RGB')
-        img = transforms.ToTensor()(img)
-        img = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(img)
-
-        data = dict(
-            imgs=img,
-            img_metas=img_meta
-        )
-        return data
-
-    def __getitem__(self, index):
-        if self.data_type == 'train':
-            return self.prepare_train_data(index)
-        elif self.data_type == 'test':
-            return self.prepare_test_data(index)
 
     def mosaic(self, index):
         """
@@ -231,6 +204,7 @@ class PolygonDataSet(data.Dataset):
 
 if __name__ == '__main__':
     import sys
+
     sys.path.append(os.path.dirname(__file__) + '/../')
     dataset = PolygonDataSet(data_type='train')
     print("total: ", len(dataset))

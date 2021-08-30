@@ -3,8 +3,6 @@ import torch.nn as nn
 import math
 import numpy as np
 import cv2
-import time
-from ..loss import build_loss, ohem_batch, iou
 from ..post_processing import pse
 
 
@@ -33,35 +31,3 @@ class PSENet_Head(nn.Module):
         out = self.relu1(self.bn1(out))
         out = self.conv2(out)
         return out
-
-    # 后处理部分
-    def get_results(self, out, img_meta=None, cfg=None):
-        outputs = dict()
-        start = time.time()
-
-        if not self.training and cfg.report_speed:
-            torch.cuda.synchronize()
-
-        score = torch.sigmoid(out[:, 0, :, :])
-
-        kernels = out[:, :cfg.test_cfg.kernel_num, :, :] > 0
-        text_mask = kernels[:, :1, :, :]
-        kernels[:, 1:, :, :] = kernels[:, 1:, :, :] * text_mask
-
-        score = score.data.cpu().numpy()[0].astype(np.float32)
-        kernels = kernels.data.cpu().numpy()[0].astype(np.uint8)
-
-        label = pse(kernels, cfg.test_cfg.min_area)
-
-        # image size
-        org_img_size = img_meta['org_img_size'][0]
-        img_size = img_meta['img_size'][0]
-
-        label_num = np.max(label) + 1
-        label = cv2.resize(label, (img_size[1], img_size[0]), interpolation=cv2.INTER_NEAREST)
-        score = cv2.resize(score, (img_size[1], img_size[0]), interpolation=cv2.INTER_NEAREST)
-        outputs.update(
-            label_map=label,
-            score_map=score,
-        )
-        return outputs

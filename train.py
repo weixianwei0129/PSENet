@@ -8,15 +8,14 @@ import random
 import argparse
 import numpy as np
 from easydict import EasyDict
-from torchvision.utils import make_grid
-import torchvision.transforms as transforms
-
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
+from utils import AverageMeter
 from models.psenet import PSENet
 from dataset.polygon import PolygonDataSet
 from models.loss.psenet_loss import PSENet_Loss
-from utils import AverageMeter
+from models.post_processing.tools import get_results
 
 torch.manual_seed(123456)
 torch.cuda.manual_seed(123456)
@@ -54,10 +53,75 @@ def color_str(string, color='blue'):
 
 def concat_img(imgs, gt_texts, gt_kernels):
     idx = np.random.randint(0, imgs.shape[0])
-    concat = [norm_img(imgs[idx]), torch.stack([gt_texts[idx]] * 3, dim=0)]
+    concat = [norm_img(imgs[idx]), torch.stack([norm_img(gt_texts[idx])] * 3, dim=0)]
     for i in range(gt_kernels.shape[1]):
-        concat.append(torch.stack([gt_kernels[idx, i, ...]] * 3, dim=0))
+        concat.append(torch.stack([norm_img(gt_kernels[idx, i, ...])] * 3, dim=0))
     return torch.cat(concat, dim=2)
+
+
+def test(test_loader, model, model_loss, epoch, cfg, writer):
+    model.eval()
+
+    # meters
+    losses = AverageMeter()
+    losses_text = AverageMeter()
+    losses_kernels = AverageMeter()
+
+    ious_text = AverageMeter()
+    ious_kernel = AverageMeter()
+
+    for iter, data in enumerate(test_loader):
+
+        imgs = data['imgs']
+        gt_texts = data['gt_texts']
+        gt_kernels = data['gt_kernels']
+        training_masks = data['training_masks']
+        if cuda:
+            imgs = imgs.cuda()
+            gt_texts = gt_texts.cuda()
+            gt_kernels = gt_kernels.cuda()
+            training_masks = training_masks.cuda()
+
+        # forward
+        out = model(imgs=imgs)
+        outputs = model_loss(out, gt_texts, gt_kernels, training_masks)
+        score, label = get_results(out, cfg.eval.kernel_num, cfg.eval.min_area)
+        print(score.shape, score.min(), score.max(), label.shape, label.min(), label.max())
+
+        # detection loss
+        loss_text = torch.mean(outputs['loss_text'])
+        losses_text.update(loss_text.item())
+
+        loss_kernels = torch.mean(outputs['loss_kernels'])
+        losses_kernels.update(loss_kernels.item())
+
+        # 论文公式（4）
+        loss = 0.7 * loss_text + 0.3 * loss_kernels
+
+        iou_text = torch.mean(outputs['iou_text'])
+        ious_text.update(iou_text.item())
+        iou_kernel = torch.mean(outputs['iou_kernel'])
+        ious_kernel.update(iou_kernel.item())
+
+        losses.update(loss.item())
+
+        concat = [norm_img(imgs[0]), torch.stack([norm_img(gt_texts[0])] * 3, dim=0)]
+        concat = torch.cat(concat, dim=2)
+        writer.add_image(f'Test-img-{iter}', concat, epoch)
+
+    # ====Summery====
+    writer.add_scalar('Test-loss', losses.avg, epoch)
+    writer.add_scalar('Test-text loss', losses_text.avg, epoch)
+    writer.add_scalar('Test-kernel loss', losses_kernels.avg, epoch)
+    writer.add_scalar('Test-text IoU', ious_text.avg, epoch)
+    writer.add_scalar('Test-kernel IoU', ious_kernel.avg, epoch)
+    output_log = f"[--------TEST------]\n" \
+                 f"{time.asctime(time.localtime())} " \
+                 f"Loss: {losses.avg:.3f} | " \
+                 f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
+                 f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})" \
+                 f"\n---------------------"
+    print(output_log)
 
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
@@ -121,6 +185,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         ious_kernel.update(iou_kernel.item())
 
         losses.update(loss.item())
+
         # backward
         optimizer.zero_grad()
         loss.backward()
@@ -183,15 +248,18 @@ def main(opt):
     model_loss = PSENet_Loss(**cfg.loss)
 
     # data loader
-    data_loader = PolygonDataSet('train')
-    train_loader = torch.utils.data.DataLoader(
-        data_loader,
+    train_dataset = PolygonDataSet('train')
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=opt.batch_size,
         shuffle=True,
         num_workers=8,
         drop_last=True,
         pin_memory=True
     )
+
+    test_dataset = PolygonDataSet('test')
+    test_loader = DataLoader(test_dataset, batch_size=1)
 
     if cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -248,6 +316,7 @@ def main(opt):
     # Loop all train data
     for epoch in range(start_epoch, opt.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
+        test(test_loader, model, model_loss, epoch, cfg, writer)
 
         train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer)
 

@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=1 python3 train_custom.py \
+CUDA_VISIBLE_DEVICES=1 python3 train.py \
 --cfg config/psev1.yaml \
 --batch_size 2 \
 --epoch 600 \
