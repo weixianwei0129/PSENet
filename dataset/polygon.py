@@ -85,9 +85,8 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        if self.use_mosaic and \
-                self.data_type == 'train' and \
-                np.random.uniform(0, 10) > 7:
+        if self.data_type == 'train' and \
+                np.random.uniform(0, 10) < self.use_mosaic:
             # mosaic
             img, text_regions, words = self.mosaic(index)
         else:

@@ -309,9 +309,12 @@ def main(opt):
             exit()
         checkpoints.sort(key=lambda x: os.path.getmtime(x))
         checkpoint = torch.load(checkpoints[-1])
-        start_epoch = checkpoint['epoch']
-        start_iter = checkpoint['iter']
-        best_loss = checkpoint['best_loss']
+        
+        if not opt.force:
+            start_epoch = checkpoint['epoch']
+            start_iter = checkpoint['iter']
+            best_loss = checkpoint['best_loss']
+
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         print(f"restore from {color_str(checkpoints[-1])}")
@@ -352,6 +355,7 @@ def parse_opt():
     parser.add_argument('--pretrain', action='store_true')
     parser.add_argument('--weights', type=str, default='epoch.pt')
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--force', action='store_true')
     opt = parser.parse_args()
     return opt
 
