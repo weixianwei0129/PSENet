@@ -7,6 +7,7 @@ import torch
 import random
 import argparse
 import numpy as np
+from tqdm import tqdm
 from easydict import EasyDict
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -70,7 +71,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
     ious_text = AverageMeter()
     ious_kernel = AverageMeter()
 
-    for iter, data in enumerate(test_loader):
+    for iter, data in tqdm(enumerate(test_loader)):
 
         imgs = data['imgs']
         gt_texts = data['gt_texts']
@@ -85,9 +86,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         # forward
         out = model(imgs=imgs)
         outputs = model_loss(out, gt_texts, gt_kernels, training_masks)
-        score, label = get_results(out, cfg.eval.kernel_num, cfg.eval.min_area)
-        print(score.shape, score.min(), score.max(), label.shape, label.min(), label.max())
-
+        
         # detection loss
         loss_text = torch.mean(outputs['loss_text'])
         losses_text.update(loss_text.item())
@@ -105,9 +104,18 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
 
         losses.update(loss.item())
 
-        concat = [norm_img(imgs[0]), torch.stack([norm_img(gt_texts[0])] * 3, dim=0)]
-        concat = torch.cat(concat, dim=2)
-        writer.add_image(f'Test-img-{iter}', concat, epoch)
+        if iter % 10 == 0:
+            score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
+            score = torch.from_numpy(score)
+            label = torch.from_numpy(label)
+            if cuda:
+                score = score.cuda()
+                label = label.cuda()
+            concat = [norm_img(imgs[0]), torch.stack([norm_img(gt_texts[0])] * 3, dim=0)]
+            concat.append(concat[0] * score[None, ...])
+            concat.append(torch.stack([norm_img(label)]*3, dim=0))
+            concat = torch.cat(concat, dim=2)
+            writer.add_image(f'Test-img-{iter}', concat, epoch)
 
     # ====Summery====
     writer.add_scalar('Test-loss', losses.avg, epoch)
@@ -115,13 +123,12 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
     writer.add_scalar('Test-kernel loss', losses_kernels.avg, epoch)
     writer.add_scalar('Test-text IoU', ious_text.avg, epoch)
     writer.add_scalar('Test-kernel IoU', ious_kernel.avg, epoch)
-    output_log = f"[--------TEST------]\n" \
-                 f"{time.asctime(time.localtime())} " \
+    output_log = f"[TEST] {time.asctime(time.localtime())} " \
                  f"Loss: {losses.avg:.3f} | " \
                  f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
-                 f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})" \
-                 f"\n---------------------"
-    print(output_log)
+                 f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})\n\n"
+    print(color_str(output_log, 'red'))
+    return losses.avg
 
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
@@ -259,7 +266,7 @@ def main(opt):
     )
 
     test_dataset = PolygonDataSet('test')
-    test_loader = DataLoader(test_dataset, batch_size=1)
+    test_loader = DataLoader(test_dataset, batch_size=1, num_workers=3)
 
     if cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -287,6 +294,7 @@ def main(opt):
     # 1. load pretrain model; 2. resume train; 3. train from scratch
     start_epoch = 0
     start_iter = 0
+    best_loss = np.inf
     if opt.pretrain:
         pretrain_file = opt.weights
         assert os.path.isfile(pretrain_file), 'Error: no pretrained weights found!'
@@ -294,17 +302,15 @@ def main(opt):
         model.load_state_dict(checkpoint['state_dict'])
         print(f'Fine tuning from pretrained model {color_str(pretrain_file)}')
     elif opt.resume:
-        if not os.path.exists(store_dir):
-            print(f"No restore file: {color_str(store_dir, 'red')}")
-            exit()
-        checkpoints = glob.glob(os.path.join(store_dir, "*.pt"))
-        if len(checkpoints) == 0:
-            print(f"There is No Files in {color_str(store_dir, 'red')}")
+        checkpoints = os.path.join(store_dir, "last.pt")
+        if not os.path.exists(checkpoints):
+            print(f"There is No Files in {color_str(checkpoints)}")
             exit()
         checkpoints.sort(key=lambda x: os.path.getmtime(x))
         checkpoint = torch.load(checkpoints[-1])
         start_epoch = checkpoint['epoch']
         start_iter = checkpoint['iter']
+        best_loss = checkpoint['best_loss']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         print(f"restore from {color_str(checkpoints[-1])}")
@@ -316,17 +322,24 @@ def main(opt):
     # Loop all train data
     for epoch in range(start_epoch, opt.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
-        test(test_loader, model, model_loss, epoch, cfg, writer)
-
         train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer)
 
-        state = dict(
-            epoch=epoch,
-            iter=0,
-            state_dict=model.state_dict(),
-            optimizer=optimizer.state_dict()
-        )
-        save_checkpoint(state, store_dir)
+        # save
+        if epoch % 50 == 0:
+            state = dict(
+                epoch=epoch,
+                iter=0,
+                state_dict=model.state_dict(),
+                optimizer=optimizer.state_dict()
+            )
+            torch.save(state, os.path.join(store_dir, 'last.pt'))
+            if epoch > opt.epoch * .3:
+                test_loss = test(test_loader, model, model_loss, epoch, cfg, writer)
+                if test_loss < best_loss:
+                    state.update(test_loss=test_loss)
+                    torch.save(state, os.path.join(store_dir, 'best.pt'))
+                    best_loss = test_loss
+
 
 
 def parse_opt():

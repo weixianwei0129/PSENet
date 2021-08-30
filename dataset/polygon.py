@@ -115,10 +115,8 @@ class PolygonDataSet(data.Dataset):
         gt_kernels = []
         for i in range(1, self.kernel_num):
             gt_kernel = np.zeros((height, width), dtype='uint8')
-
             rate = 1.0 - (1.0 - self.min_scale) / (self.kernel_num - 1) * i
             kernel_text_regions = shrink(text_regions, rate)
-
             for kernel_points in kernel_text_regions:
                 cv2.fillPoly(gt_kernel, [kernel_points.astype(int)], 1)
             gt_kernels.append(gt_kernel)
@@ -128,7 +126,6 @@ class PolygonDataSet(data.Dataset):
             if np.random.uniform(0, 10) > 5:
                 img = random_color_aug(img)
             maps = [img, gt_instance, training_mask] + gt_kernels
-            maps.extend(gt_kernels)
             if np.random.uniform(0, 10) > 5:
                 maps = random_rotate(maps)
             img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
