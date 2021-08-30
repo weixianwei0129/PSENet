@@ -7,7 +7,5 @@ def build_loss(cfg):
         if key == 'type':
             continue
         param[key] = cfg[key]
-
     loss = models.loss.__dict__[cfg.type](**param)
-
     return loss

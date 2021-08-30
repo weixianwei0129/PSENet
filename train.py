@@ -138,6 +138,8 @@ def save_checkpoint(state, checkpoint_path, cfg):
 def main(args):
     cuda = torch.cuda.is_available()
     cfg = Config.fromfile(args.config)
+    print(cfg)
+    exit()
     print(json.dumps(cfg._cfg_dict, indent=4))
 
     if args.checkpoint is not None:
@@ -209,6 +211,9 @@ def main(args):
             optimizer=optimizer.state_dict()
         )
         save_checkpoint(state, checkpoint_path, cfg)
+
+def parse_opt():
+    pass
 
 
 if __name__ == '__main__':

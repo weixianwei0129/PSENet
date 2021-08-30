@@ -12,18 +12,13 @@ class PSENet_Head(nn.Module):
     def __init__(self,
                  in_channels,
                  hidden_dim,
-                 num_classes,
-                 loss_text,
-                 loss_kernel):
+                 num_classes):
         super(PSENet_Head, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm2d(hidden_dim)
         self.relu1 = nn.ReLU(inplace=True)
 
         self.conv2 = nn.Conv2d(hidden_dim, num_classes, kernel_size=1, stride=1, padding=0)
-
-        self.text_loss = build_loss(loss_text)
-        self.kernel_loss = build_loss(loss_kernel)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -37,11 +32,10 @@ class PSENet_Head(nn.Module):
         out = self.conv1(f)
         out = self.relu1(self.bn1(out))
         out = self.conv2(out)
-
         return out
 
     # 后处理部分
-    def get_results(self, out, img_meta, cfg):
+    def get_results(self, out, img_meta=None, cfg=None):
         outputs = dict()
         start = time.time()
 
@@ -70,82 +64,4 @@ class PSENet_Head(nn.Module):
             label_map=label,
             score_map=score,
         )
-
-        if not self.training and cfg.report_speed:
-            torch.cuda.synchronize()
-            outputs.update(dict(
-                det_pse_time=time.time() - start
-            ))
-
-        scale = (float(org_img_size[1]) / float(img_size[1]),
-                 float(org_img_size[0]) / float(img_size[0]))
-
-        bboxes = []
-        scores = []
-        for i in range(1, label_num):
-            ind = label == i
-            points = np.array(np.where(ind)).transpose((1, 0))
-
-            if points.shape[0] < cfg.test_cfg.min_area:
-                label[ind] = 0
-                continue
-
-            score_i = np.mean(score[ind])
-            if score_i < cfg.test_cfg.min_score:
-                label[ind] = 0
-                continue
-
-            if cfg.test_cfg.bbox_type == 'rect':
-                rect = cv2.minAreaRect(points[:, ::-1])
-                bbox = cv2.boxPoints(rect) * scale
-            elif cfg.test_cfg.bbox_type == 'poly':
-                binary = np.zeros(label.shape, dtype='uint8')
-                binary[ind] = 1
-                _, contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                bbox = contours[0] * scale
-            else:
-                raise Exception("There is no bbox")
-            # bbox = np.reshape(bbox, (-1, 2)) / np.array([float(org_img_size[1]), float(org_img_size[0])])
-
-            bbox = bbox.astype('int32')
-            bboxes.append(bbox.reshape(-1))
-            scores.append(score_i)
-
-        outputs.update(dict(
-            bboxes=bboxes,
-            scores=scores,
-        ))
-
         return outputs
-
-    def loss(self, out, gt_texts, gt_kernels, training_masks):
-        # output
-        texts = out[:, 0, :, :]
-        kernels = out[:, 1:, :, :]
-        # text loss
-        selected_masks = ohem_batch(texts, gt_texts, training_masks)
-
-        loss_text = self.text_loss(texts, gt_texts, selected_masks, reduce=False)  # 实现论文公式（6），分类loss
-        iou_text = iou((texts > 0).long(), gt_texts, training_masks, reduce=False)  # 计算iou
-        losses = dict(
-            loss_text=loss_text,
-            iou_text=iou_text
-        )
-
-        # kernel loss 论文的公式（7）
-        loss_kernels = []
-        selected_masks = gt_texts * training_masks
-        for i in range(kernels.size(1)):
-            kernel_i = kernels[:, i, :, :]
-            gt_kernel_i = gt_kernels[:, i, :, :]
-            loss_kernel_i = self.kernel_loss(kernel_i, gt_kernel_i, selected_masks, reduce=False)
-            loss_kernels.append(loss_kernel_i)
-        loss_kernels = torch.mean(torch.stack(loss_kernels, dim=1), dim=1)
-        iou_kernel = iou(
-            (kernels[:, -1, :, :] > 0).long(), gt_kernels[:, -1, :, :], training_masks * gt_texts, reduce=False)
-        losses.update(dict(
-            loss_kernels=loss_kernels,
-            iou_kernel=iou_kernel
-        ))
-
-        return losses
