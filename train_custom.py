@@ -1,14 +1,13 @@
-import torch
-import numpy as np
-import random
-import argparse
 import os
-import os.path as osp
 import sys
 import time
-import json
 import yaml
-from easydict import EasyDict as edict
+import glob
+import torch
+import random
+import argparse
+import numpy as np
+from easydict import EasyDict
 
 from models.psenet import PSENet
 from dataset.polygon import PolygonDataSet
@@ -21,27 +20,29 @@ np.random.seed(123456)
 random.seed(123456)
 cuda = torch.cuda.is_available()
 
+
 def color_str(string, color='blue'):
     colors = {'black': '\033[30m',  # basic colors
-                'red': '\033[31m',
-                'green': '\033[32m',
-                'yellow': '\033[33m',
-                'blue': '\033[34m',
-                'magenta': '\033[35m',
-                'cyan': '\033[36m',
-                'white': '\033[37m',
-                'bright_black': '\033[90m',  # bright colors
-                'bright_red': '\033[91m',
-                'bright_green': '\033[92m',
-                'bright_yellow': '\033[93m',
-                'bright_blue': '\033[94m',
-                'bright_magenta': '\033[95m',
-                'bright_cyan': '\033[96m',
-                'bright_white': '\033[97m',
-                'end': '\033[0m',  # misc
-                'bold': '\033[1m',
-                'underline': '\033[4m'}
+              'red': '\033[31m',
+              'green': '\033[32m',
+              'yellow': '\033[33m',
+              'blue': '\033[34m',
+              'magenta': '\033[35m',
+              'cyan': '\033[36m',
+              'white': '\033[37m',
+              'bright_black': '\033[90m',  # bright colors
+              'bright_red': '\033[91m',
+              'bright_green': '\033[92m',
+              'bright_yellow': '\033[93m',
+              'bright_blue': '\033[94m',
+              'bright_magenta': '\033[95m',
+              'bright_cyan': '\033[96m',
+              'bright_white': '\033[97m',
+              'end': '\033[0m',  # misc
+              'bold': '\033[1m',
+              'underline': '\033[4m'}
     return f"{colors.get(color, colors['red'])}{string}{colors['end']}"
+
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg):
     model.train()
@@ -56,7 +57,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg):
 
     ious_text = AverageMeter()
     ious_kernel = AverageMeter()
-    accs_rec = AverageMeter()
     # start time
     start = time.time()
     for iter, data in enumerate(train_loader):
@@ -152,7 +152,7 @@ def save_checkpoint(state, checkpoint_path):
 
 
 def main(opt):
-    cfg = edict(yaml.safe_load(open(opt.cfg)))
+    cfg = EasyDict(yaml.safe_load(open(opt.cfg)))
     # model
     model = PSENet(**cfg.model)
     model_loss = PSENet_Loss(**cfg.loss)
@@ -181,34 +181,35 @@ def main(opt):
             optimizer = torch.optim.SGD(model.parameters(), lr=cfg.train.lr, momentum=0.99, weight_decay=5e-4)
         elif cfg.train.optimizer == 'Adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
+        else:
+            raise Exception(f"Error optimizer method! ({cfg.train.optimizer})")
 
     workspace = os.path.join(opt.project, opt.name)
     store_dir = os.path.join(workspace, 'ckpt')
-    
+
     start_epoch = 0
     start_iter = 0
     if opt.pretrain:
         pretrain_file = opt.weights
-        assert os.isfile(pretrain_file), 'Error: no pretrained weights found!'
+        assert os.path.isfile(pretrain_file), 'Error: no pretrained weights found!'
         checkpoint = torch.load(pretrain_file)
         model.load_state_dict(checkpoint['state_dict'])
-        print(f'Finetuning from pretrained model {color_str(pretrain_file)}')
+        print(f'Fine tuning from pretrained model {color_str(pretrain_file)}')
     elif opt.resume:
-        if not os.path.exists(restore_path):
-            print(f"No restore file: {color_str(restore_path, 'red')}")
+        if not os.path.exists(store_dir):
+            print(f"No restore file: {color_str(store_dir, 'red')}")
             exit()
-        ckpt = glob.glob(os.path.join(store_dir, "*.pt"))
-        if len(ckpt) == 0:
+        checkpoints = glob.glob(os.path.join(store_dir, "*.pt"))
+        if len(checkpoints) == 0:
             print(f"There is No Files in {color_str(store_dir, 'red')}")
             exit()
-        ckpt.sort(key=lambda x: os.path.getmtime(x))
-        restore_path = ckpt[-1]
-        checkpoint = torch.load(restore_path)
+        checkpoints.sort(key=lambda x: os.path.getmtime(x))
+        checkpoint = torch.load(checkpoints[-1])
         start_epoch = checkpoint['epoch']
         start_iter = checkpoint['iter']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        print(f"restore from {color_str(restore_path)}")
+        print(f"restore from {color_str(checkpoints[-1])}")
     else:
         if not os.path.exists(store_dir):
             os.makedirs(store_dir)
