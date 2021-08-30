@@ -1,6 +1,6 @@
 CUDA_VISIBLE_DEVICES=1 python3 train.py \
---cfg config/psev1.yaml \
+--cfg config/pse_v1.1.0.yaml \
 --batch_size 2 \
 --epoch 600 \
 --project /data/weixianwei/models/psenet/uniform \
---name v1.0.0.test
+--name v1.1.0

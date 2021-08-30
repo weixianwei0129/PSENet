@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import yaml
-import glob
 import torch
 import random
 import argparse
@@ -86,7 +85,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         # forward
         out = model(imgs=imgs)
         outputs = model_loss(out, gt_texts, gt_kernels, training_masks)
-        
+
         # detection loss
         loss_text = torch.mean(outputs['loss_text'])
         losses_text.update(loss_text.item())
@@ -95,7 +94,8 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         losses_kernels.update(loss_kernels.item())
 
         # 论文公式（4）
-        loss = 0.7 * loss_text + 0.3 * loss_kernels
+        loss = cfg.loss.loss_text.loss_weight * loss_text + \
+               cfg.loss.loss_kernel.loss_weight * loss_kernels
 
         iou_text = torch.mean(outputs['iou_text'])
         ious_text.update(iou_text.item())
@@ -113,7 +113,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
                 label = label.cuda()
             concat = [norm_img(imgs[0]), torch.stack([norm_img(gt_texts[0])] * 3, dim=0)]
             concat.append(concat[0] * score[None, ...])
-            concat.append(torch.stack([norm_img(label)]*3, dim=0))
+            concat.append(torch.stack([norm_img(label)] * 3, dim=0))
             concat = torch.cat(concat, dim=2)
             writer.add_image(f'Test-img-{iter}', concat, epoch)
 
@@ -184,7 +184,8 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         losses_kernels.update(loss_kernels.item())
 
         # 论文公式（4）
-        loss = 0.7 * loss_text + 0.3 * loss_kernels
+        loss = cfg.loss.loss_text.loss_weight * loss_text + \
+               cfg.loss.loss_kernel.loss_weight * loss_kernels
 
         iou_text = torch.mean(outputs['iou_text'])
         ious_text.update(iou_text.item())
@@ -339,7 +340,6 @@ def main(opt):
                     state.update(test_loss=test_loss)
                     torch.save(state, os.path.join(store_dir, 'best.pt'))
                     best_loss = test_loss
-
 
 
 def parse_opt():

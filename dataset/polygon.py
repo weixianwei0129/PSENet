@@ -57,9 +57,10 @@ class PolygonDataSet(data.Dataset):
                  data_type='train',
                  short_size=736,
                  kernel_num=7,
-                 min_scale=0.4):
+                 min_scale=0.4,
+                 use_mosaic=True):
         self.data_type = data_type
-
+        self.use_mosaic = use_mosaic
         self.short_size = short_size
         self.kernel_num = kernel_num
         self.min_scale = min_scale
@@ -84,7 +85,9 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        if np.random.uniform(0, 10) > 10 and self.data_type != 'test':
+        if self.use_mosaic and \
+                self.data_type == 'train' and \
+                np.random.uniform(0, 10) > 7:
             # mosaic
             img, text_regions, words = self.mosaic(index)
         else:

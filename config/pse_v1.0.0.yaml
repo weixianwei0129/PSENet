@@ -27,6 +27,7 @@ data:
   short_size: 736
   kernel_num: 7
   min_scale: 0.4
+  use_mosaic: True
 evaluation:
   min_score: 0.85
   min_area: 16
