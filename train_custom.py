@@ -9,7 +9,6 @@ import argparse
 import numpy as np
 from easydict import EasyDict
 
-import visdom
 from torch.utils.tensorboard import SummaryWriter
 
 from models.psenet import PSENet
@@ -47,7 +46,7 @@ def color_str(string, color='blue'):
     return f"{colors.get(color, colors['red'])}{string}{colors['end']}"
 
 
-def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, viz, writer):
+def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
     model.train()
 
     # meters
@@ -122,14 +121,14 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, vi
         # print log
         if iter % 20 == 0:
             step = epoch * len(train_loader) + iter
-            viz.line([loss.avg], [step], win='loss', update='append')
-            writer.add_scalar('loss', loss.avg, step)
-            output_log = f"{time.asctime(time.localtime())} ({iter + 1:4d}/{len(train_loader):4d}) " \
+            writer.add_scalar('loss', losses.avg, step)
+            output_log = f"{time.asctime(time.localtime())} " \
+                         f"({iter + 1:4d}/{len(train_loader):4d}) " \
                          f"LR: {optimizer.param_groups[0]['lr']:.6f} | Batch: {batch_time.avg:.3f}s " \
-                         f"Loss: {loss.avg:.3f} | Loss(text/kernel): ({losses_text:.3f}/{losses_kernels:.3f}) " \
+                         f"Loss: {losses.avg:.3f} | Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
-            sys.stdout.flush()
+            # sys.stdout.flush()
 
 
 def adjust_learning_rate(optimizer, dataloader, epoch, iter, cfg):
@@ -194,7 +193,6 @@ def main(opt):
     workspace = os.path.join(opt.project, opt.name)
     store_dir = os.path.join(workspace, 'ckpt')
 
-    viz = visdom.Visdom(server="http://localhost", port=6007, env='pse')
     writer = SummaryWriter(log_dir=workspace, flush_secs=30)
 
     # select train type :
@@ -231,7 +229,7 @@ def main(opt):
     for epoch in range(start_epoch, opt.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
 
-        train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, viz, writer)
+        train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer)
 
         state = dict(
             epoch=epoch,
