@@ -8,6 +8,7 @@ import random
 import argparse
 import numpy as np
 from easydict import EasyDict
+from torchvision.utils import make_grid
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -81,7 +82,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         gt_texts = data['gt_texts']
         gt_kernels = data['gt_kernels']
         training_masks = data['training_masks']
-
         if cuda:
             imgs = imgs.cuda()
             gt_texts = gt_texts.cuda()
@@ -121,11 +121,19 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         # print log
         if iter % 20 == 0:
             step = epoch * len(train_loader) + iter
+
+            writer.add_image('img', make_grid(imgs), step)
+            writer.add_image('gt_texts', make_grid(gt_texts), step)
+            for i, kernel in enumerate(gt_kernels):
+                writer.add_image(f'gt_kernel_{i}', make_grid(kernel), step)
             writer.add_scalar('loss', losses.avg, step)
+            writer.add_scalar('text loss', losses_text.avg, step)
+            writer.add_scalar('kernel loss', losses_kernels.avg, step)
             output_log = f"{time.asctime(time.localtime())} " \
                          f"({iter + 1:4d}/{len(train_loader):4d}) " \
                          f"LR: {optimizer.param_groups[0]['lr']:.6f} | Batch: {batch_time.avg:.3f}s " \
-                         f"Loss: {losses.avg:.3f} | Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
+                         f"Loss: {losses.avg:.3f} | " \
+                         f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
             # sys.stdout.flush()
