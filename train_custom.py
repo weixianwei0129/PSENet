@@ -24,8 +24,10 @@ np.random.seed(123456)
 random.seed(123456)
 cuda = torch.cuda.is_available()
 
+
 def norm_img(img):
-    return (img-img.min()) / (img.max()-img.min())
+    return (img - img.min()) / (img.max() - img.min())
+
 
 def color_str(string, color='blue'):
     colors = {'black': '\033[30m',  # basic colors
@@ -52,10 +54,11 @@ def color_str(string, color='blue'):
 
 def concat_img(imgs, gt_texts, gt_kernels):
     idx = np.random.randint(0, imgs.shape[0])
-    concat = [norm_img(imgs[idx]), torch.stack([gt_texts[idx]]*3,axis=0)]
+    concat = [norm_img(imgs[idx]), torch.stack([gt_texts[idx]] * 3, dim=0)]
     for i in range(gt_kernels.shape[1]):
-        concat.append(torch.stack([gt_kernels[idx, i, ...]]*3,axis=0))
-    return torch.cat(concat, axis=2)
+        concat.append(torch.stack([gt_kernels[idx, i, ...]] * 3, dim=0))
+    return torch.cat(concat, dim=2)
+
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
     model.train()
@@ -132,14 +135,12 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         if iter % 20 == 0:
             step = epoch * len(train_loader) + iter
             # ====Summery====
-            # idx = np.random.randint(0, imgs.shape[0])
             writer.add_image('img', concat_img(imgs, gt_texts, gt_kernels), step)
-            # writer.add_image('gt_texts', gt_texts[idx][None, ...], step)
-            # for i in range(gt_kernels.shape[1]):
-            #     writer.add_image(f'gt_kernel_b{i}', gt_kernels[idx, i, ...][None, ...], step)
             writer.add_scalar('loss', losses.avg, step)
             writer.add_scalar('text loss', losses_text.avg, step)
             writer.add_scalar('kernel loss', losses_kernels.avg, step)
+            writer.add_scalar('text IoU', ious_text.avg, step)
+            writer.add_scalar('kernel IoU', ious_kernel.avg, step)
             output_log = f"{time.asctime(time.localtime())} " \
                          f"({iter + 1:4d}/{len(train_loader):4d}) " \
                          f"LR: {optimizer.param_groups[0]['lr']:.6f} | Batch: {batch_time.avg:.3f}s " \

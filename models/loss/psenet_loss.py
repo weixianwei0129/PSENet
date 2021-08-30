@@ -7,6 +7,7 @@ import time
 from ..loss import build_loss, ohem_batch, iou
 from ..post_processing import pse
 
+
 class PSENet_Loss(nn.Module):
     def __init__(self,
                  loss_text,
@@ -15,7 +16,7 @@ class PSENet_Loss(nn.Module):
 
         self.text_loss = build_loss(loss_text)
         self.kernel_loss = build_loss(loss_kernel)
-    
+
     def forward(self, out, gt_texts, gt_kernels, training_masks):
         # output
         texts = out[:, 0, :, :]
