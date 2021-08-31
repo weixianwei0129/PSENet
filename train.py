@@ -58,6 +58,7 @@ def concat_img(imgs, gt_texts, gt_kernels):
         concat.append(torch.stack([norm_img(gt_kernels[idx, i, ...])] * 3, dim=0))
     return torch.cat(concat, dim=2)
 
+
 @torch.no_grad()
 def test(test_loader, model, model_loss, epoch, cfg, writer):
     model.eval()
@@ -201,7 +202,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
 
         # backward
         if cur_batch_size >= train_batch_size or \
-            iter == len(train_loader) - 1:
+                iter == len(train_loader) - 1:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -232,6 +233,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
             # sys.stdout.flush()
+
 
 def adjust_learning_rate(optimizer, dataloader, epoch, iter, cfg):
     schedule = cfg.train.schedule
@@ -316,7 +318,7 @@ def main(opt):
         if not os.path.exists(checkpoint_path):
             print(f"There is No Files in {color_str(checkpoint_path)}")
             exit()
-            
+
         checkpoint = torch.load(checkpoint_path)
         if not opt.force:
             start_epoch = checkpoint['epoch']
@@ -361,8 +363,10 @@ def parse_opt():
     parser.add_argument('--name', type=str, default='vx.x.x', help='Name of train model')
     parser.add_argument('--pretrain', action='store_true', help='Whether to use a pre-training model')
     parser.add_argument('--weights', type=str, default='xx.pt', help="Pretrain the model's path on disk")
-    parser.add_argument('--resume', action='store_true', help="Whether to resume, and find the `last.pt` file as weights")
-    parser.add_argument('--force', action='store_true', help="If True, only reload weights and optimizer, else reload epoch number and test loss")
+    parser.add_argument('--resume', action='store_true',
+                        help="Whether to resume, and find the `last.pt` file as weights")
+    parser.add_argument('--force', action='store_true',
+                        help="If True, only reload weights and optimizer, else reload epoch number and test loss")
     opt = parser.parse_args()
     return opt
 
