@@ -149,8 +149,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
     model.train()
     total_data_num = len(train_loader)
     # meters
-    batch_time = AverageMeter()
-
     losses = AverageMeter()
     losses_text = AverageMeter()
     losses_kernels = AverageMeter()
@@ -162,8 +160,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
     train_batch_size = cfg.train.batch_size
     data_batch_size = cfg.data.batch_size
     cur_batch_size = data_batch_size
-    # start time
-    start = time.time()
+
     optimizer.zero_grad()
     for iter, data in enumerate(train_loader):
 
@@ -210,9 +207,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
             scaler.update()
             optimizer.zero_grad()
             cur_batch_size = data_batch_size
-            # update start time
-            batch_time.update(time.time() - start)
-            start = time.time()
         else:
             cur_batch_size += data_batch_size
 
@@ -226,11 +220,12 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
             writer.add_scalar('train/loss/kernel loss', losses_kernels.avg, step)
             writer.add_scalar('train/IoU/text IoU', ious_text.avg, step)
             writer.add_scalar('train/IoU/kernel IoU', ious_kernel.avg, step)
-            output_log = f"{time.asctime(time.localtime())} " \
-                         f"({iter + 1:4d}/{len(train_loader):4d}) " \
-                         f"LR: {optimizer.param_groups[0]['lr']:.6f} | Batch: {batch_time.avg:.3f}s " \
-                         f"Loss: {losses.avg:.3f} | " \
-                         f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
+            writer.add_scalar('train/learning_rate', optimizer.param_groups[0]['lr'], step)
+            output_log = f"[{time.asctime(time.localtime())}] " \
+                         f"[{iter + 1:4d}/{len(train_loader):4d}] " \
+                         f"LR: {optimizer.param_groups[0]['lr']:.6f} | " \
+                         f"Loss(total/text/kernel): " \
+                         f"({losses.avg:.3f}/{losses_text.avg:.3f}/{losses_kernels.avg:.3f}) | " \
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
 
@@ -371,7 +366,7 @@ def main(opt):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='config/xxx.yaml', help="Description from README.md.")
-    parser.add_argument('--linear_lr', action='store_false', help="If true, use linear lr, else use cosine lr")
+    parser.add_argument('--linear_lr', action='store_true', help="If true, use linear lr, else use cosine lr")
     parser.add_argument('--epochs', type=int, default=300, help='Total epoch during training.')
     parser.add_argument('--project', type=str, default='', help='Project path on disk')
     parser.add_argument('--name', type=str, default='vx.x.x', help='Name of train model')
