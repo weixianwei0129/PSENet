@@ -27,6 +27,9 @@ cuda = torch.cuda.is_available()
 def norm_img(img):
     return (img - img.min()) / (img.max() - img.min())
 
+def check_file(cfg, opt):
+    assert cfg.model.detection_head.kernel_num == cfg.data.kernel_num
+    assert opt.name in opt.cfg
 
 def color_str(string, color='blue'):
     colors = {'black': '\033[30m',  # basic colors
@@ -297,9 +300,12 @@ def main(opt):
             raise Exception(f"Error optimizer method! ({cfg.train.optimizer})")
 
     # Specifying the disk address
-    assert opt.name in opt.cfg
+    check_file(cfg, opt)
     workspace = os.path.join(opt.project, opt.name)
     store_dir = os.path.join(workspace, 'ckpt')
+    if not os.path.exists(store_dir):
+        os.makedirs(store_dir)
+        print(f"create a path {color_str(store_dir)}.")
 
     writer = SummaryWriter(log_dir=workspace, flush_secs=30)
 
