@@ -20,6 +20,7 @@ loss:
 train:
   lr: 0.0032
   lf: 0.12
+  warmup_epochs: 5
   epoch: 600
   optimizer: SGD
   batch_size: 16

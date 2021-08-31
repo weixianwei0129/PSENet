@@ -36,7 +36,7 @@ def check_file(cfg, opt):
     assert opt.name in opt.cfg
 
 
-def one_cycle(y1=0.0, y2=1.0, steps=100):
+def one_cycle(y1=1.0, y2=0.0, steps=100):
     # lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf
     return lambda x: ((1 - np.cos(x * np.pi / steps)) / 2) * (y2 - y1) + y1
 
@@ -341,6 +341,14 @@ def main(opt):
 
     # Loop all train data
     for epoch in range(start_epoch, opt.epochs):
+
+        # warmup
+        if opt.warmup and epoch <= cfg.train.warmup_epochs:
+            xi = [0, cfg.train.warmup_epochs]
+            for j, x in enumerate(optimizer.param_groups):
+                # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+                x['lr'] = np.interp(epoch, xi, [0.0, x['initial_lr'] * lf(epoch)])
+
         t1 = time.time()
         print(f"\nEpoch: ({epoch + 1:4d}/{opt.epochs:4d})")
         train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer)
@@ -374,6 +382,7 @@ def parse_opt():
     parser.add_argument('--weights', type=str, default='xx.pt', help="Pretrain the model's path on disk")
     parser.add_argument('--resume', action='store_true',
                         help="Whether to resume, and find the `last.pt` file as weights")
+    parser.add_argument('--warmup', action='store_true', help="Warmup learning rate")
     parser.add_argument('--force', action='store_true',
                         help="If True, only reload weights and optimizer, else reload epoch number and test loss")
     opt = parser.parse_args()
