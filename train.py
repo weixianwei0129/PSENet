@@ -313,7 +313,7 @@ def main(opt):
         assert os.path.isfile(pretrain_file), 'Error: no pretrained weights found!'
         checkpoint = torch.load(pretrain_file)
         model.load_state_dict(checkpoint['state_dict'])
-        print(f'Fine tuning from pretrained model {color_str(pretrain_file)}')
+        print(f"Fine tuning from {color_str('pretrained model', 'red')} {color_str(pretrain_file)}")
     elif opt.resume:
         checkpoint_path = os.path.join(store_dir, "last.pt")
         if not os.path.exists(checkpoint_path):
@@ -328,11 +328,11 @@ def main(opt):
 
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        print(f"restore from {color_str(checkpoint_path)}")
+        print(f"{color_str('restore', 'red')} from {color_str(checkpoint_path)}")
     else:
         if not os.path.exists(store_dir):
             os.makedirs(store_dir)
-        print(f"Train model from scratch and save at {color_str(store_dir)}")
+        print(f"Train model from {color_str('scratch', 'red')} and save at {color_str(store_dir)}")
 
     # Loop all train data
     for epoch in range(start_epoch, opt.epoch):
