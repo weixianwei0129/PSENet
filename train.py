@@ -201,11 +201,11 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         losses.update(loss.item())
 
         # backward
+        loss.backward()
         if cur_batch_size >= train_batch_size or \
                 iter == len(train_loader) - 1:
-            optimizer.zero_grad()
-            loss.backward()
             optimizer.step()
+            optimizer.zero_grad()
             cur_batch_size = data_batch_size
         else:
             cur_batch_size += data_batch_size
@@ -297,6 +297,7 @@ def main(opt):
             raise Exception(f"Error optimizer method! ({cfg.train.optimizer})")
 
     # Specifying the disk address
+    assert opt.name in opt.cfg
     workspace = os.path.join(opt.project, opt.name)
     store_dir = os.path.join(workspace, 'ckpt')
 
