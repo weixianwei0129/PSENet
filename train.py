@@ -355,14 +355,14 @@ def main(opt):
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='config/xxx.yaml')
-    parser.add_argument('--epoch', type=int, default=300)
-    parser.add_argument('--project', type=str, default='')
-    parser.add_argument('--name', type=str, default='vx.x.x')
-    parser.add_argument('--pretrain', action='store_true')
-    parser.add_argument('--weights', type=str, default='xx.pt')
-    parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--force', action='store_true')
+    parser.add_argument('--cfg', type=str, default='config/xxx.yaml', help="Description from README.md.")
+    parser.add_argument('--epoch', type=int, default=300, help='Total epoch during training.')
+    parser.add_argument('--project', type=str, default='', help='Project path on disk')
+    parser.add_argument('--name', type=str, default='vx.x.x', help='Name of train model')
+    parser.add_argument('--pretrain', action='store_true', help='Whether to use a pre-training model')
+    parser.add_argument('--weights', type=str, default='xx.pt', help="Pretrain the model's path on disk")
+    parser.add_argument('--resume', action='store_true', help="Whether to resume, and find the `last.pt` file as weights")
+    parser.add_argument('--force', action='store_true', help="If True, only reload weights and optimizer, else reload epoch number and test loss")
     opt = parser.parse_args()
     return opt
 

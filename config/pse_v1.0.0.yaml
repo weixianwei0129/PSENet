@@ -9,7 +9,7 @@ model:
     type: PSENet_Head
     in_channels: 1024
     hidden_dim: 256
-    num_classes: 7
+    kernel_num: 7
 loss:
   loss_text:
     type: DiceLoss
@@ -23,13 +23,11 @@ train:
   epoch: 600
   optimizer: SGD
 data:
-  img_size: 736
   short_size: 736
   kernel_num: 7
   min_scale: 0.4
   use_mosaic: True
 evaluation:
-  min_score: 0.85
   min_area: 16
   kernel_num: 7
 
