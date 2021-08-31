@@ -58,10 +58,10 @@ def concat_img(imgs, gt_texts, gt_kernels):
         concat.append(torch.stack([norm_img(gt_kernels[idx, i, ...])] * 3, dim=0))
     return torch.cat(concat, dim=2)
 
-
+@torch.no_grad()
 def test(test_loader, model, model_loss, epoch, cfg, writer):
     model.eval()
-
+    total_data_num = len(test_loader)
     # meters
     losses = AverageMeter()
     losses_text = AverageMeter()
@@ -104,7 +104,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
 
         losses.update(loss.item())
 
-        if iter % 10 == 0:
+        if iter % np.ceil(total_data_num / 5) == 0:
             score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
             score = torch.from_numpy(score)
             label = torch.from_numpy(label)
@@ -133,7 +133,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
 
 def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
     model.train()
-
+    total_data_num = len(train_loader)
     # meters
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -144,6 +144,11 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
 
     ious_text = AverageMeter()
     ious_kernel = AverageMeter()
+
+    # 增大batch_size
+    train_batch_size = cfg.train.batch_size
+    data_batch_size = cfg.data.batch_size
+    cur_batch_size = data_batch_size
     # start time
     start = time.time()
     for iter, data in enumerate(train_loader):
@@ -195,9 +200,14 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         losses.update(loss.item())
 
         # backward
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if cur_batch_size >= train_batch_size or \
+            iter == len(train_loader) - 1:
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            cur_batch_size = data_batch_size
+        else:
+            cur_batch_size += data_batch_size
 
         batch_time.update(time.time() - start)
 
@@ -205,7 +215,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         start = time.time()
 
         # print log
-        if iter % 20 == 0:
+        if iter % np.ceil(total_data_num / 5) == 0:
             step = epoch * len(train_loader) + iter
             # ====Summery====
             writer.add_image('img', concat_img(imgs, gt_texts, gt_kernels), step)
@@ -222,7 +232,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
             # sys.stdout.flush()
-
 
 def adjust_learning_rate(optimizer, dataloader, epoch, iter, cfg):
     schedule = cfg.train.schedule
@@ -259,7 +268,7 @@ def main(opt):
     train_dataset = PolygonDataSet('train')
     train_loader = DataLoader(
         train_dataset,
-        batch_size=opt.batch_size,
+        batch_size=cfg.data.batch_size,
         shuffle=True,
         num_workers=8,
         drop_last=True,
@@ -267,7 +276,7 @@ def main(opt):
     )
 
     test_dataset = PolygonDataSet('test')
-    test_loader = DataLoader(test_dataset, batch_size=1, num_workers=3)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=3)
 
     if cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -303,21 +312,20 @@ def main(opt):
         model.load_state_dict(checkpoint['state_dict'])
         print(f'Fine tuning from pretrained model {color_str(pretrain_file)}')
     elif opt.resume:
-        checkpoints = os.path.join(store_dir, "last.pt")
-        if not os.path.exists(checkpoints):
-            print(f"There is No Files in {color_str(checkpoints)}")
+        checkpoint_path = os.path.join(store_dir, "last.pt")
+        if not os.path.exists(checkpoint_path):
+            print(f"There is No Files in {color_str(checkpoint_path)}")
             exit()
-        checkpoints.sort(key=lambda x: os.path.getmtime(x))
-        checkpoint = torch.load(checkpoints[-1])
-        
+            
+        checkpoint = torch.load(checkpoint_path)
         if not opt.force:
             start_epoch = checkpoint['epoch']
             start_iter = checkpoint['iter']
-            best_loss = checkpoint['best_loss']
+            best_loss = checkpoint.get('best_loss', np.inf)
 
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        print(f"restore from {color_str(checkpoints[-1])}")
+        print(f"restore from {color_str(checkpoint_path)}")
     else:
         if not os.path.exists(store_dir):
             os.makedirs(store_dir)
@@ -347,13 +355,12 @@ def main(opt):
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='config/psev1.yaml')
-    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--cfg', type=str, default='config/xxx.yaml')
     parser.add_argument('--epoch', type=int, default=300)
     parser.add_argument('--project', type=str, default='')
-    parser.add_argument('--name', type=str, default='v1.0.0')
+    parser.add_argument('--name', type=str, default='vx.x.x')
     parser.add_argument('--pretrain', action='store_true')
-    parser.add_argument('--weights', type=str, default='epoch.pt')
+    parser.add_argument('--weights', type=str, default='xx.pt')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--force', action='store_true')
     opt = parser.parse_args()
