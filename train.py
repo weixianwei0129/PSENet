@@ -7,6 +7,9 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 from easydict import EasyDict
+
+from torch import nn
+from torch.cuda import amp
 from torch.utils.data import DataLoader
 from torch.optim import SGD, Adam, lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
@@ -21,7 +24,7 @@ torch.manual_seed(123456)
 torch.cuda.manual_seed(123456)
 np.random.seed(123456)
 random.seed(123456)
-cuda = torch.cuda.is_available()
+cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def norm_img(img):
@@ -87,7 +90,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         gt_texts = data['gt_texts']
         gt_kernels = data['gt_kernels']
         training_masks = data['training_masks']
-        if cuda:
+        if cuda == 'cuda':
             imgs = imgs.cuda()
             gt_texts = gt_texts.cuda()
             gt_kernels = gt_kernels.cuda()
@@ -119,7 +122,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
             score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
             score = torch.from_numpy(score)
             label = torch.from_numpy(label)
-            if cuda:
+            if cuda == 'cuda':
                 score = score.cuda()
                 label = label.cuda()
             concat = [norm_img(imgs[0]), torch.stack([norm_img(gt_texts[0])] * 3, dim=0)]
@@ -142,7 +145,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
     return losses.avg
 
 
-def train(train_loader, model, model_loss, optimizer, epoch, cfg, writer):
+def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer):
     model.train()
     total_data_num = len(train_loader)
     # meters
@@ -175,7 +178,7 @@ def train(train_loader, model, model_loss, optimizer, epoch, cfg, writer):
         gt_texts = data['gt_texts']
         gt_kernels = data['gt_kernels']
         training_masks = data['training_masks']
-        if cuda:
+        if cuda == 'cuda':
             imgs = imgs.cuda()
             gt_texts = gt_texts.cuda()
             gt_kernels = gt_kernels.cuda()
@@ -204,10 +207,11 @@ def train(train_loader, model, model_loss, optimizer, epoch, cfg, writer):
         losses.update(loss.item())
 
         # backward
-        loss.backward()
+        scaler.scale(loss).backward()
         if cur_batch_size >= train_batch_size or \
                 iter == len(train_loader) - 1:
-            optimizer.step()
+            scaler.step(optimizer)  # optimizer.step()
+            scaler.update()
             optimizer.zero_grad()
             cur_batch_size = data_batch_size
         else:
@@ -257,7 +261,7 @@ def main(opt):
         train_dataset,
         batch_size=cfg.data.batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,  # 可用GPU数量的四倍
         drop_last=True,
         pin_memory=True
     )
@@ -270,29 +274,32 @@ def main(opt):
         num_workers=3
     )
 
-    if cuda:
+    if cuda == 'cuda':
         model = torch.nn.DataParallel(model).cuda()
     else:
         model = torch.nn.DataParallel(model)
 
+    # 创建优化器
     # Check if model has custom optimizer / loss
+    g0, g1, g2 = [], [], []  # optimizer parameter groups
+    for v in model.modules():
+        if hasattr(v, 'bias') and isinstance(v.bias, nn.Parameter):  # bias
+            g2.append(v.bias)
+        if isinstance(v, nn.BatchNorm2d):  # weight (no decay)
+            g0.append(v.weight)
+        elif hasattr(v, 'weight') and isinstance(v.weight, nn.Parameter):  # weight (with decay)
+            g1.append(v.weight)
     if hasattr(model.module, 'optimizer'):
         optimizer = model.module.optimizer
     else:
         if cfg.train.optimizer == 'SGD':
-            optimizer = SGD(
-                model.parameters(),
-                lr=cfg.train.lr,
-                momentum=0.99,
-                weight_decay=5e-4
-            )
+            optimizer = SGD(g0, lr=cfg.train.lr, momentum=0.99, nesterov=True)
         elif cfg.train.optimizer == 'Adam':
-            optimizer = Adam(
-                model.parameters(),
-                lr=cfg.train.lr
-            )
+            optimizer = Adam(g0, lr=cfg.train.lr)
         else:
             raise Exception(f"Error optimizer method! ({cfg.train.optimizer})")
+    optimizer.add_param_group({'params': g1, 'weight_decay': 5e-4})  # add g1 with weight_decay
+    optimizer.add_param_group({'params': g2})  # add g2 (biases)
 
     # Specifying the disk address
     check_file(cfg, opt)
@@ -310,15 +317,15 @@ def main(opt):
     best_loss = np.inf
     if opt.pretrain:
         pretrain_file = opt.weights
-        assert os.path.isfile(pretrain_file), 'Error: no pretrained weights found!'
+        assert os.path.isfile(pretrain_file), \
+            'Error: no pretrained weights found!'
         checkpoint = torch.load(pretrain_file)
         model.load_state_dict(checkpoint['state_dict'])
         print(f"Fine tuning from {color_str('pretrained model', 'red')} {color_str(pretrain_file)}")
     elif opt.resume:
         checkpoint_path = os.path.join(store_dir, "last.pt")
-        if not os.path.exists(checkpoint_path):
-            print(f"There is No Files in {color_str(checkpoint_path)}")
-            exit()
+        assert os.path.isfile(checkpoint_path), \
+            f'Error: no checkpoint file found at {color_str(checkpoint_path)}'
 
         checkpoint = torch.load(checkpoint_path)
         if not opt.force:
@@ -341,10 +348,13 @@ def main(opt):
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     scheduler.last_epoch = start_epoch - 1
 
+    # 混合精度 FP32 + FP16
+    scaler = amp.GradScaler(enabled=cuda)
+
     # Loop all train data
     for epoch in range(start_epoch, opt.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
-        train(train_loader, model, model_loss, optimizer, epoch, cfg, writer)
+        train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer)
         scheduler.step()
 
         # save model and optimizer
