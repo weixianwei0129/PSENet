@@ -150,7 +150,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
     total_data_num = len(train_loader)
     # meters
     batch_time = AverageMeter()
-    data_time = AverageMeter()
 
     losses = AverageMeter()
     losses_text = AverageMeter()
@@ -167,9 +166,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
     start = time.time()
     optimizer.zero_grad()
     for iter, data in enumerate(train_loader):
-
-        # time cost of data loader
-        data_time.update(time.time() - start)
 
         # prepare input
         data.update(dict(cfg=cfg))
@@ -214,13 +210,11 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
             scaler.update()
             optimizer.zero_grad()
             cur_batch_size = data_batch_size
+            # update start time
+            batch_time.update(time.time() - start)
+            start = time.time()
         else:
             cur_batch_size += data_batch_size
-
-        batch_time.update(time.time() - start)
-
-        # update start time
-        start = time.time()
 
         # print log
         if iter % np.ceil(total_data_num / 5) == 0:
@@ -239,7 +233,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer
                          f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
-            # sys.stdout.flush()
 
 
 def save_checkpoint(state, checkpoint_path):
@@ -342,9 +335,9 @@ def main(opt):
 
     # Scheduler 设置
     if opt.linear_lr:
-        lf = lambda x: (1 - x / (opt.epoch - 1)) * (1.0 - cfg.train.lf) + cfg.train.lf  # linear
+        lf = lambda x: (1 - x / (opt.epochs - 1)) * (1.0 - cfg.train.lf) + cfg.train.lf  # linear
     else:
-        lf = one_cycle(1, cfg.train.lf, opt.epoch)
+        lf = one_cycle(1, cfg.train.lf, opt.epochs)
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
     scheduler.last_epoch = start_epoch - 1
 
@@ -352,10 +345,12 @@ def main(opt):
     scaler = amp.GradScaler(enabled=cuda)
 
     # Loop all train data
-    for epoch in range(start_epoch, opt.epoch):
-        print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
+    for epoch in range(start_epoch, opt.epochs):
+        t1 = time.time()
+        print(f"\nEpoch: ({epoch + 1:4d}/{opt.epochs:4d})")
         train(train_loader, model, model_loss, optimizer, epoch, scaler, cfg, writer)
         scheduler.step()
+        print(f"An epoch takes {time.time() - t1:.3f}s")
 
         # save model and optimizer
         if epoch % 50 == 0:
@@ -365,7 +360,7 @@ def main(opt):
                 optimizer=optimizer.state_dict()
             )
             torch.save(state, os.path.join(store_dir, 'last.pt'))
-            if epoch > opt.epoch * .3:
+            if epoch > opt.epochs * .1:
                 test_loss = test(test_loader, model, model_loss, epoch, cfg, writer)
                 if test_loss < best_loss:
                     state.update(test_loss=test_loss)
@@ -377,7 +372,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='config/xxx.yaml', help="Description from README.md.")
     parser.add_argument('--linear_lr', action='store_false', help="If true, use linear lr, else use cosine lr")
-    parser.add_argument('--epoch', type=int, default=300, help='Total epoch during training.')
+    parser.add_argument('--epochs', type=int, default=300, help='Total epoch during training.')
     parser.add_argument('--project', type=str, default='', help='Project path on disk')
     parser.add_argument('--name', type=str, default='vx.x.x', help='Name of train model')
     parser.add_argument('--pretrain', action='store_true', help='Whether to use a pre-training model')
