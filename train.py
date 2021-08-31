@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import yaml
 import torch
@@ -9,6 +8,7 @@ import numpy as np
 from tqdm import tqdm
 from easydict import EasyDict
 from torch.utils.data import DataLoader
+from torch.optim import SGD, Adam, lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
 
 from utils import AverageMeter
@@ -27,9 +27,16 @@ cuda = torch.cuda.is_available()
 def norm_img(img):
     return (img - img.min()) / (img.max() - img.min())
 
+
 def check_file(cfg, opt):
     assert cfg.model.detection_head.kernel_num == cfg.data.kernel_num
     assert opt.name in opt.cfg
+
+
+def one_cycle(y1=0.0, y2=1.0, steps=100):
+    # lambda function for sinusoidal ramp from y1 to y2 https://arxiv.org/pdf/1812.01187.pdf
+    return lambda x: ((1 - np.cos(x * np.pi / steps)) / 2) * (y2 - y1) + y1
+
 
 def color_str(string, color='blue'):
     colors = {'black': '\033[30m',  # basic colors
@@ -119,14 +126,14 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
             concat.append(concat[0] * score[None, ...])
             concat.append(torch.stack([norm_img(label)] * 3, dim=0))
             concat = torch.cat(concat, dim=2)
-            writer.add_image(f'Test-img-{iter}', concat, epoch)
+            writer.add_image(f'test/img/{iter}', concat, epoch)
 
     # ====Summery====
-    writer.add_scalar('Test-loss', losses.avg, epoch)
-    writer.add_scalar('Test-text loss', losses_text.avg, epoch)
-    writer.add_scalar('Test-kernel loss', losses_kernels.avg, epoch)
-    writer.add_scalar('Test-text IoU', ious_text.avg, epoch)
-    writer.add_scalar('Test-kernel IoU', ious_kernel.avg, epoch)
+    writer.add_scalar('test/loss/total loss', losses.avg, epoch)
+    writer.add_scalar('test/loss/text loss', losses_text.avg, epoch)
+    writer.add_scalar('test/loss/kernel loss', losses_kernels.avg, epoch)
+    writer.add_scalar('test/IoU/text IoU', ious_text.avg, epoch)
+    writer.add_scalar('test/IoU/kernel IoU', ious_kernel.avg, epoch)
     output_log = f"[TEST] {time.asctime(time.localtime())} " \
                  f"Loss: {losses.avg:.3f} | " \
                  f"Loss(text/kernel): ({losses_text.avg:.3f}/{losses_kernels.avg:.3f}) " \
@@ -135,7 +142,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
     return losses.avg
 
 
-def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer):
+def train(train_loader, model, model_loss, optimizer, epoch, cfg, writer):
     model.train()
     total_data_num = len(train_loader)
     # meters
@@ -155,18 +162,11 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
     cur_batch_size = data_batch_size
     # start time
     start = time.time()
+    optimizer.zero_grad()
     for iter, data in enumerate(train_loader):
-        # skip previous iterations
-        if iter < start_iter:
-            print('Skipping iter: %d' % iter)
-            sys.stdout.flush()
-            continue
 
         # time cost of data loader
         data_time.update(time.time() - start)
-
-        # adjust learning rate
-        adjust_learning_rate(optimizer, train_loader, epoch, iter, cfg)
 
         # prepare input
         data.update(dict(cfg=cfg))
@@ -222,12 +222,12 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
         if iter % np.ceil(total_data_num / 5) == 0:
             step = epoch * len(train_loader) + iter
             # ====Summery====
-            writer.add_image('img', concat_img(imgs, gt_texts, gt_kernels), step)
-            writer.add_scalar('loss', losses.avg, step)
-            writer.add_scalar('text loss', losses_text.avg, step)
-            writer.add_scalar('kernel loss', losses_kernels.avg, step)
-            writer.add_scalar('text IoU', ious_text.avg, step)
-            writer.add_scalar('kernel IoU', ious_kernel.avg, step)
+            writer.add_image('train/img', concat_img(imgs, gt_texts, gt_kernels), step)
+            writer.add_scalar('train/loss/total loss', losses.avg, step)
+            writer.add_scalar('train/loss/text loss', losses_text.avg, step)
+            writer.add_scalar('train/loss/kernel loss', losses_kernels.avg, step)
+            writer.add_scalar('train/IoU/text IoU', ious_text.avg, step)
+            writer.add_scalar('train/IoU/kernel IoU', ious_kernel.avg, step)
             output_log = f"{time.asctime(time.localtime())} " \
                          f"({iter + 1:4d}/{len(train_loader):4d}) " \
                          f"LR: {optimizer.param_groups[0]['lr']:.6f} | Batch: {batch_time.avg:.3f}s " \
@@ -236,24 +236,6 @@ def train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, wr
                          f"IoU(text/kernel): ({ious_text.avg:.3f}/{ious_kernel.avg:.3f})"
             print(output_log)
             # sys.stdout.flush()
-
-
-def adjust_learning_rate(optimizer, dataloader, epoch, iter, cfg):
-    schedule = cfg.train.schedule
-    if isinstance(schedule, str):
-        assert schedule == 'poly lr', 'Error: schedule should be poly lr!'
-        cur_iter = epoch * len(dataloader) + iter
-        max_iter_num = cfg.train.epoch * len(dataloader)
-        lr = cfg.train.lr * (1 - float(cur_iter) / max_iter_num) ** 0.9
-    elif isinstance(schedule, list):
-        lr = cfg.train.lr
-        for i in range(len(schedule)):
-            if epoch < schedule[i]:
-                break
-            lr = lr * 0.1
-
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
 
 
 def save_checkpoint(state, checkpoint_path):
@@ -281,7 +263,12 @@ def main(opt):
     )
 
     test_dataset = PolygonDataSet('test')
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=3)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=1,
+        shuffle=True,
+        num_workers=3
+    )
 
     if cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -293,9 +280,17 @@ def main(opt):
         optimizer = model.module.optimizer
     else:
         if cfg.train.optimizer == 'SGD':
-            optimizer = torch.optim.SGD(model.parameters(), lr=cfg.train.lr, momentum=0.99, weight_decay=5e-4)
+            optimizer = SGD(
+                model.parameters(),
+                lr=cfg.train.lr,
+                momentum=0.99,
+                weight_decay=5e-4
+            )
         elif cfg.train.optimizer == 'Adam':
-            optimizer = torch.optim.Adam(model.parameters(), lr=cfg.train.lr)
+            optimizer = Adam(
+                model.parameters(),
+                lr=cfg.train.lr
+            )
         else:
             raise Exception(f"Error optimizer method! ({cfg.train.optimizer})")
 
@@ -312,7 +307,6 @@ def main(opt):
     # select train type :
     # 1. load pretrain model; 2. resume train; 3. train from scratch
     start_epoch = 0
-    start_iter = 0
     best_loss = np.inf
     if opt.pretrain:
         pretrain_file = opt.weights
@@ -329,7 +323,6 @@ def main(opt):
         checkpoint = torch.load(checkpoint_path)
         if not opt.force:
             start_epoch = checkpoint['epoch']
-            start_iter = checkpoint['iter']
             best_loss = checkpoint.get('best_loss', np.inf)
 
         model.load_state_dict(checkpoint['state_dict'])
@@ -340,16 +333,24 @@ def main(opt):
             os.makedirs(store_dir)
         print(f"Train model from {color_str('scratch', 'red')} and save at {color_str(store_dir)}")
 
+    # Scheduler 设置
+    if opt.linear_lr:
+        lf = lambda x: (1 - x / (opt.epoch - 1)) * (1.0 - cfg.train.lf) + cfg.train.lf  # linear
+    else:
+        lf = one_cycle(1, cfg.train.lf, opt.epoch)
+    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
+    scheduler.last_epoch = start_epoch - 1
+
     # Loop all train data
     for epoch in range(start_epoch, opt.epoch):
         print('\nEpoch: [%d | %d]' % (epoch + 1, opt.epoch))
-        train(train_loader, model, model_loss, optimizer, epoch, start_iter, cfg, writer)
+        train(train_loader, model, model_loss, optimizer, epoch, cfg, writer)
+        scheduler.step()
 
-        # save
+        # save model and optimizer
         if epoch % 50 == 0:
             state = dict(
                 epoch=epoch,
-                iter=0,
                 state_dict=model.state_dict(),
                 optimizer=optimizer.state_dict()
             )
@@ -365,6 +366,7 @@ def main(opt):
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='config/xxx.yaml', help="Description from README.md.")
+    parser.add_argument('--linear_lr', action='store_false', help="If true, use linear lr, else use cosine lr")
     parser.add_argument('--epoch', type=int, default=300, help='Total epoch during training.')
     parser.add_argument('--project', type=str, default='', help='Project path on disk')
     parser.add_argument('--name', type=str, default='vx.x.x', help='Name of train model')
