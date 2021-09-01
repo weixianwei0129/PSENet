@@ -5,7 +5,6 @@ import cv2
 import yaml
 import torch
 import numpy as np
-from tqdm import tqdm
 from easydict import EasyDict
 import matplotlib.pyplot as plt
 from collections import OrderedDict
@@ -15,6 +14,7 @@ from dataset.polygon import get_ann
 from models.post_processing.tools import get_results
 
 cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
 def iou_single(a, b, n_class=2):
     miou = []
@@ -54,9 +54,9 @@ def preprocess_img(img, short_size=736, mean=None, std=None):
     """
     img = scale_aligned_short(img, short_size=short_size)
     if mean is None:
-        mean = np.reshape([0.485, 0.456, 0.406], (1,1,3))
+        mean = np.reshape([0.485, 0.456, 0.406], (1, 1, 3))
     if std is None:
-        std = np.reshape([0.229, 0.224, 0.225], (1,1,3))
+        std = np.reshape([0.229, 0.224, 0.225], (1, 1, 3))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img.astype(np.float32) / 255.0
     img = (img - mean) / std
@@ -99,49 +99,43 @@ def load_model(root_path):
 def main():
     model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.3.0/')
     all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500/test//*.JPG")
-    prs,rcs,f1s,ious = [], [], [], []
-    total = len(all_path)
+    prs, rcs, ious = [], [], []
     all_path.sort()
     for img_path in all_path:
+
+        # Load Data
         img = cv2.imread(img_path)
         height, width = img.shape[:2]
         gt_path = img_path.replace('.JPG', '.TXT')
         text_regions, words = get_ann(img, gt_path)
-        # =======构建gt_text=======
-        # 记录全部的文本区域: 有文本为[文本的序号], 没有文本为0
-        gt_instance = np.zeros((height, width), dtype='uint8')
+        gt_text = np.zeros((height, width), dtype='uint8')
         for idx, points in enumerate(text_regions):
             points = np.reshape(points, (-1, 2)) * np.array([width, height]).T
             points = np.int32(points)
             text_regions[idx] = points
-            cv2.fillPoly(gt_instance, [points], idx + 1)
-        gt_text = gt_instance.copy()
-        gt_text[gt_text > 0] = 1
-        gt_text = gt_text.flatten()
-        # =======model infer======
-        score, label = do_infer(model, img, cfg)
-        
-        predict = (label > 0).astype(int).flatten()
+            cv2.fillPoly(gt_text, [points], 1)
+        gt_text = gt_text.flatten().astype(int)
 
+        # Inference
+        _, label = do_infer(model, img, cfg)
+
+        # Metric
+        predict = (label > 0.5).astype(int).flatten()
         iou = iou_single(predict, gt_text)
-
         tp = np.sum(np.logical_and(predict == 1, gt_text == 1))
-
         fp = np.sum(np.logical_and(predict == 1, gt_text == 0))
         fn = np.sum(np.logical_and(predict == 0, gt_text == 1))
 
         precision = tp / (tp + fp + 1e-4)
         recall = tp / (tp + fn + 1e-4)
-        f1 = (2 * precision * recall) / (precision + recall + 1e-5)
 
         if iou < 0.5:
             print(f"{img_path}>>{iou}")
 
-        prs.append(precision) 
+        prs.append(precision)
         rcs.append(recall)
         ious.append(iou)
 
-    # plt.figure(figsize=(600, 600), dpi=100)
     plt.subplot(221)
     plt.title('prs')
     plt.hist(prs)
@@ -154,4 +148,6 @@ def main():
     plt.tight_layout()
     plt.savefig('res.png')
 
-main()
+
+if __name__ == '__main__':
+    main()
