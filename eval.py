@@ -103,7 +103,6 @@ def main():
     total = len(all_path)
     all_path.sort()
     for img_path in all_path:
-        print(img_path)
         img = cv2.imread(img_path)
         height, width = img.shape[:2]
         gt_path = img_path.replace('.JPG', '.TXT')
@@ -127,33 +126,32 @@ def main():
         iou = iou_single(predict, gt_text)
 
         tp = np.sum(np.logical_and(predict == 1, gt_text == 1))
-        # tn = np.sum(np.logical_and(predict == 0, gt_text == 0))
 
         fp = np.sum(np.logical_and(predict == 1, gt_text == 0))
         fn = np.sum(np.logical_and(predict == 0, gt_text == 1))
+
         precision = tp / (tp + fp + 1e-4)
         recall = tp / (tp + fn + 1e-4)
-        # print(f"{tp/1000:3.3f}, {fp/1000:3.3f}, {fn/1000:3.3f}, {precision:.4f}, {recall:.4f}")
+        f1 = (2 * precision * recall) / (precision + recall + 1e-5)
 
-        f1 = (2 * precision * recall) / (recall + precision + 1e-4)
+        if iou < 0.5:
+            print(f"{img_path}>>{iou}")
 
         prs.append(precision) 
         rcs.append(recall)
-        f1s.append(f1)
         ious.append(iou)
 
+    # plt.figure(figsize=(600, 600), dpi=100)
     plt.subplot(221)
     plt.title('prs')
     plt.hist(prs)
     plt.subplot(222)
     plt.title('rcs')
     plt.hist(rcs)
-    plt.subplot(223)
-    plt.title('f1s')
-    plt.hist(f1s)
-    plt.subplot(224)
+    plt.subplot(212)
     plt.title('ious')
     plt.hist(ious)
+    plt.tight_layout()
     plt.savefig('res.png')
 
 main()
