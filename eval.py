@@ -5,20 +5,23 @@ import cv2
 import yaml
 import torch
 import numpy as np
+from tqdm import tqdm
 from easydict import EasyDict
+import matplotlib.pyplot as plt
+from collections import OrderedDict
 
 from models.psenet import PSENet
 from dataset.polygon import get_ann
 from models.post_processing.tools import get_results
 
+cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def iou_single(a, b, n_class=2):
     miou = []
     for i in range(n_class):
-        inter = ((a == i) & (b == i)).float()
-        union = ((a == i) | (b == i)).float()
-
-        miou.append(torch.sum(inter) / (torch.sum(union) + 1e-4))
+        inter = ((a == i) & (b == i)).astype(float)
+        union = ((a == i) | (b == i)).astype(float)
+        miou.append(np.sum(inter) / (np.sum(union) + 1e-4))
     miou = sum(miou) / len(miou)
     return miou
 
@@ -51,54 +54,60 @@ def preprocess_img(img, short_size=736, mean=None, std=None):
     """
     img = scale_aligned_short(img, short_size=short_size)
     if mean is None:
-        mean = np.reshape([0.485, 0.456, 0.406], (3, 1))
+        mean = np.reshape([0.485, 0.456, 0.406], (1,1,3))
     if std is None:
-        std = np.reshape([0.229, 0.224, 0.225], (3, 1))
+        std = np.reshape([0.229, 0.224, 0.225], (1,1,3))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img.astype(np.float32) / 255.0
     img = (img - mean) / std
     img = np.transpose(img, (2, 0, 1))[None, ...]
-    img = np.ascontiguousarray(img)
+    img = np.ascontiguousarray(img).astype(np.float32)
     assert len(img.shape) == 4
-    return img
+    img = torch.from_numpy(img)
+    return img.cuda() if cuda == 'cuda' else img
 
 
 @torch.no_grad()
 def do_infer(model, img, cfg):
-    height, width = img.shape[:2]
     model.eval()
     processed_img = preprocess_img(img)
     out = model(processed_img)
     score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
-    score = cv2.resize(score, (width, height))
-    label = cv2.resize(label, (width, height))
+    height, width = img.shape[:2]
+    score = cv2.resize(score.astype(np.float32), (width, height))
+    label = cv2.resize(label.astype(np.float32), (width, height))
     return score, label
 
 
 def load_model(root_path):
     cfg_path = os.path.join(root_path, "config.yaml")
-    weights = os.path.join(root_path, "last.pt")
-    cfg = EasyDict(yaml.safe_load(cfg_path))
-
+    weights = os.path.join(root_path, "ckpt/best.pt")
+    cfg = EasyDict(yaml.safe_load(open(cfg_path)))
     model = PSENet(**cfg.model)
 
     checkpoint = torch.load(weights)
-    model.load_state_dict(checkpoint['state_dict'])
+    d = OrderedDict()
+    for key, value in checkpoint['state_dict'].items():
+        name = key[7:]  # key 中删除前七个字符
+        d[name] = value
+    model.load_state_dict(d)
+    if cuda == 'cuda':
+        model = model.cuda()
     return model, cfg
 
 
 def main():
-    model, cfg = load_model('checkpoints/v1.3.0')
-    all_path = glob.glob("/Users/weixianwei/Dataset/open/MSRA-TD500/test/*.JPG")
-    prs = np.zeros((11,))
-    rcs = np.zeros((11,))
-    f1s = np.zeros((11,))
-    ious = np.zeros((11,))
+    model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.3.0/')
+    all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500/test//*.JPG")
+    prs,rcs,f1s,ious = [], [], [], []
+    total = len(all_path)
+    all_path.sort()
     for img_path in all_path:
+        print(img_path)
         img = cv2.imread(img_path)
-        gt_path = img_path.repalce('.JPG', '.TXT')
-        text_regions, words = get_ann(img, gt_path)
         height, width = img.shape[:2]
+        gt_path = img_path.replace('.JPG', '.TXT')
+        text_regions, words = get_ann(img, gt_path)
         # =======构建gt_text=======
         # 记录全部的文本区域: 有文本为[文本的序号], 没有文本为0
         gt_instance = np.zeros((height, width), dtype='uint8')
@@ -112,24 +121,39 @@ def main():
         gt_text = gt_text.flatten()
         # =======model infer======
         score, label = do_infer(model, img, cfg)
-        for index in range(0, 11):
-            threshold = index / 10
-            score = score[score > threshold].astype(int).flatten()
-            iou = iou_single(score, label)
-            tp = np.sum(score == 1 and gt_text == 1)
-            tn = np.sum(score == 0 and gt_text == 0)
-            fp = np.sum(score == 0 and gt_text == 1)
-            fn = np.sum(score == 1 and gt_text == 0)
-            precision = tp / (tp + fp + 1e-4)
-            recall = tp / (tp + fn + 1e-4)
-            f1 = (2 * precision * recall) / (recall + precision)
-            prs[index] += precision
-            rcs[index] += recall
-            f1s[index] += f1
-            ious[index] += iou
+        
+        predict = (label > 0).astype(int).flatten()
 
-    prs /= 11.0
-    rcs /= 11.0
-    f1s /= 11.0
-    ious /= 11.0
-    print(prs, rcs, f1s, ious)
+        iou = iou_single(predict, gt_text)
+
+        tp = np.sum(np.logical_and(predict == 1, gt_text == 1))
+        # tn = np.sum(np.logical_and(predict == 0, gt_text == 0))
+
+        fp = np.sum(np.logical_and(predict == 1, gt_text == 0))
+        fn = np.sum(np.logical_and(predict == 0, gt_text == 1))
+        precision = tp / (tp + fp + 1e-4)
+        recall = tp / (tp + fn + 1e-4)
+        # print(f"{tp/1000:3.3f}, {fp/1000:3.3f}, {fn/1000:3.3f}, {precision:.4f}, {recall:.4f}")
+
+        f1 = (2 * precision * recall) / (recall + precision + 1e-4)
+
+        prs.append(precision) 
+        rcs.append(recall)
+        f1s.append(f1)
+        ious.append(iou)
+
+    plt.subplot(221)
+    plt.title('prs')
+    plt.hist(prs)
+    plt.subplot(222)
+    plt.title('rcs')
+    plt.hist(rcs)
+    plt.subplot(223)
+    plt.title('f1s')
+    plt.hist(f1s)
+    plt.subplot(224)
+    plt.title('ious')
+    plt.hist(ious)
+    plt.savefig('res.png')
+
+main()
