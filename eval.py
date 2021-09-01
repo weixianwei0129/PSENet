@@ -18,7 +18,7 @@ cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def iou_single(a, b, n_class=2):
     miou = []
-    for i in range(n_class):
+    for i in range(1, n_class):
         inter = ((a == i) & (b == i)).astype(float)
         union = ((a == i) | (b == i)).astype(float)
         miou.append(np.sum(inter) / (np.sum(union) + 1e-4))
@@ -120,7 +120,7 @@ def main():
         _, label = do_infer(model, img, cfg)
 
         # Metric
-        predict = (label > 0.5).astype(int).flatten()
+        predict = (label > 0).astype(int).flatten()
         iou = iou_single(predict, gt_text)
         tp = np.sum(np.logical_and(predict == 1, gt_text == 1))
         fp = np.sum(np.logical_and(predict == 1, gt_text == 0))
@@ -130,7 +130,11 @@ def main():
         recall = tp / (tp + fn + 1e-4)
 
         if iou < 0.5:
-            print(f"{img_path}>>{iou}")
+            print(f"{img_path}>>{iou:.4f} | {words}")
+            basename = os.path.basename(img_path)
+            label = (label - np.min(label)) / (np.max(label) - np.min(label) + 1e-5) * 255
+            if len(words):
+                cv2.imwrite(basename, label.astype(np.uint8))
 
         prs.append(precision)
         rcs.append(recall)
