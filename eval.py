@@ -22,7 +22,7 @@ def iou_single(a, b, n_class=2):
         inter = ((a == i) & (b == i)).astype(float)
         union = ((a == i) | (b == i)).astype(float)
         miou.append(np.sum(inter) / (np.sum(union) + 1e-4))
-    miou = sum(miou) / len(miou)
+    miou = sum(miou) / (len(miou) + 1e-4)
     return miou
 
 
@@ -131,13 +131,14 @@ def main():
 
         if iou < 0.5:
             print(f"{img_path}>>{iou:.4f} | {words}")
-
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             mask = np.zeros_like(img, dtype=np.uint8)
             for idx, points in enumerate(text_regions):
                 cv2.fillPoly(mask, [points], (0, 255, 0))
             gt_img = np.clip(0.3 * mask + img, 0, 255).astype(np.uint8)
             predict_mask = np.zeros_like(img, dtype=np.uint8)
-            predict_mask[..., 1] = (label / np.max(label) * 255).astype(np.uint8)
+            predict_mask[..., 2] = np.clip(label * 255, 0, 255).astype(np.uint8)
             gt_img = np.clip(0.3 * predict_mask + gt_img, 0, 255).astype(np.uint8)
 
             basename = os.path.basename(img_path)
