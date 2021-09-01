@@ -131,10 +131,17 @@ def main():
 
         if iou < 0.5:
             print(f"{img_path}>>{iou:.4f} | {words}")
+
+            mask = np.zeros_like(img, dtype=np.uint8)
+            for idx, points in enumerate(text_regions):
+                cv2.fillPoly(mask, [points], (0, 255, 0))
+            gt_img = np.clip(0.3 * mask + img, 0, 255).astype(np.uint8)
+            predict_mask = np.zeros_like(img, dtype=np.uint8)
+            predict_mask[..., 1] = (label / np.max(label) * 255).astype(np.uint8)
+            gt_img = np.clip(0.3 * predict_mask + gt_img, 0, 255).astype(np.uint8)
+
             basename = os.path.basename(img_path)
-            label = (label - np.min(label)) / (np.max(label) - np.min(label) + 1e-5) * 255
-            if len(words):
-                cv2.imwrite(basename, label.astype(np.uint8))
+            cv2.imwrite(basename, gt_img)
 
         prs.append(precision)
         rcs.append(recall)
