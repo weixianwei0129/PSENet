@@ -363,12 +363,12 @@ def main(opt):
                 optimizer=optimizer.state_dict()
             )
             torch.save(state, os.path.join(store_dir, 'last.pt'))
-            if epoch > opt.epochs * .1:
-                test_loss = test(test_loader, model, model_loss, epoch, cfg, writer)
-                if test_loss < best_loss:
-                    state.update(test_loss=test_loss)
-                    torch.save(state, os.path.join(store_dir, 'best.pt'))
-                    best_loss = test_loss
+        if epoch > opt.epochs * .3 and epoch % 10 == 0:
+            test_loss = test(test_loader, model, model_loss, epoch, cfg, writer)
+            if test_loss < best_loss:
+                state.update(test_loss=test_loss)
+                torch.save(state, os.path.join(store_dir, 'best.pt'))
+                best_loss = test_loss
 
 
 def parse_opt():
