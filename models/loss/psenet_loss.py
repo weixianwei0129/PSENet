@@ -1,11 +1,6 @@
 import torch
 import torch.nn as nn
-import math
-import numpy as np
-import cv2
-import time
 from ..loss import build_loss, ohem_batch, iou
-from ..post_processing import pse
 
 
 class PSENet_Loss(nn.Module):
@@ -18,10 +13,8 @@ class PSENet_Loss(nn.Module):
         self.kernel_loss = build_loss(loss_kernel)
 
     def forward(self, out, gt_texts, gt_kernels, training_masks):
-        # output
-        texts = out[:, 0, :, :]
-        kernels = out[:, 1:, :, :]
         # text loss
+        texts = out[:, 0, :, :]
         selected_masks = ohem_batch(texts, gt_texts, training_masks)
 
         loss_text = self.text_loss(texts, gt_texts, selected_masks, reduce=False)  # 实现论文公式（6），分类loss
@@ -32,6 +25,7 @@ class PSENet_Loss(nn.Module):
         )
 
         # kernel loss 论文的公式（7）
+        kernels = out[:, 1:, :, :]
         loss_kernels = []
         selected_masks = gt_texts * training_masks
         for i in range(kernels.size(1)):

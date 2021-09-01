@@ -1,13 +1,14 @@
 import os
 import time
 import yaml
-import torch
+import shutil
 import random
 import argparse
 import numpy as np
 from tqdm import tqdm
 from easydict import EasyDict
 
+import torch
 from torch import nn
 from torch.cuda import amp
 from torch.utils.data import DataLoader
@@ -108,8 +109,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         losses_kernels.update(loss_kernels.item())
 
         # 论文公式（4）
-        loss = cfg.loss.loss_text.loss_weight * loss_text + \
-               cfg.loss.loss_kernel.loss_weight * loss_kernels
+        loss = loss_text + loss_kernels
 
         iou_text = torch.mean(outputs['iou_text'])
         ious_text.update(iou_text.item())
@@ -297,6 +297,9 @@ def main(opt):
         os.makedirs(store_dir)
         print(f"create a path {color_str(store_dir)}.")
 
+    # copy config file
+    shutil.copy(opt.cfg, os.path.join(workspace, 'config.yaml'))
+
     writer = SummaryWriter(log_dir=workspace, flush_secs=30)
 
     # select train type :
@@ -356,14 +359,14 @@ def main(opt):
         print(f"An epoch takes {time.time() - t1:.3f}s")
 
         # save model and optimizer
-        if epoch % 50 == 0:
+        if epoch % 50 == 0 or epoch == opt.epochs - 1:
             state = dict(
                 epoch=epoch,
                 state_dict=model.state_dict(),
                 optimizer=optimizer.state_dict()
             )
             torch.save(state, os.path.join(store_dir, 'last.pt'))
-        if epoch > opt.epochs * .3 and epoch % 10 == 0:
+        if (epoch > opt.epochs * .3 and epoch % 10 == 0) or (epoch == opt.epochs - 1):
             test_loss = test(test_loader, model, model_loss, epoch, cfg, writer)
             if test_loss < best_loss:
                 state.update(test_loss=test_loss)
