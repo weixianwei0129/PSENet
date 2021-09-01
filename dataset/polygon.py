@@ -7,8 +7,8 @@ from PIL import Image
 from torch.utils import data
 import torchvision.transforms as transforms
 
-from dataset.utils import shrink, scale_aligned_short
-from dataset.utils import random_color_aug, random_rotate
+from dataset.utils import shrink, random_rotate, crop_img
+from dataset.utils import random_color_aug, scale_aligned_short
 
 train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
 train_data_dir = os.path.join(train_root_dir, 'train')
@@ -85,10 +85,16 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        if self.data_type == 'train' and \
+        do_crop = np.random.randint(0, 10) < 3
+
+        if self.data_type == 'train' and not do_crop and \
                 np.random.uniform(0, 10) < self.use_mosaic:
-            # mosaic
-            img, text_regions, words = self.mosaic(index)
+            if np.random.choice([True, False]):
+                # mosaic
+                img, text_regions, words = self.mosaic(index)
+            else:
+                img, text_regions, words = self.mix_up(index)
+
         else:
             img_path = self.img_paths[index]
             gt_path = self.gt_paths[index]
@@ -96,7 +102,12 @@ class PolygonDataSet(data.Dataset):
             text_regions, words = get_ann(img, gt_path)
 
         if self.data_type == 'train':
-            img = cv2.resize(img, (self.short_size, self.short_size))
+            if do_crop:
+                h, w = img.shape[:2]
+                min_side = min([h, w, self.short_size * 2])
+                img = scale_aligned_short(img, min_side)
+            else:
+                img = cv2.resize(img, (self.short_size, self.short_size))
         else:
             img = scale_aligned_short(img, self.short_size)
         height, width = img.shape[:2]
@@ -128,7 +139,10 @@ class PolygonDataSet(data.Dataset):
             if np.random.uniform(0, 10) > 5:
                 img = random_color_aug(img)
             maps = [img, gt_instance, training_mask] + gt_kernels
-            if np.random.uniform(0, 10) > 5:
+            if do_crop:
+                for i in range(len(maps)):
+                    maps[i] = cv2.resize(crop_img(maps[i]), (self.short_size, self.short_size))
+            elif np.random.uniform(0, 10) > 5:  # rotate
                 maps = random_rotate(maps)
             img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
 
@@ -151,6 +165,20 @@ class PolygonDataSet(data.Dataset):
             training_masks=training_mask,
         )
         return data
+
+    def mix_up(self, index):
+        indexes = np.random.choice(range(len(self.img_paths)), size=(2,)).tolist()
+        if index not in indexes:
+            indexes[0] = index
+        img1 = get_img(self.img_paths[indexes[0]])
+        texts_regions1, words1 = get_ann(img1, self.gt_paths[indexes[0]])
+        img1 = cv2.resize(img1, (self.short_size, self.short_size))
+        img2 = get_img(self.img_paths[indexes[1]])
+        texts_regions2, words2 = get_ann(img2, self.gt_paths[indexes[1]])
+        img2 = cv2.resize(img2, (self.short_size, self.short_size))
+        r = np.random.beta(32.0, 32.0)  # mixup ratio, alpha=beta=32.0
+        img = (img1 * r + img2 * (1 - r)).astype(np.uint8)
+        return img, texts_regions1 + texts_regions2, words1 + words2
 
     def mosaic(self, index):
         """

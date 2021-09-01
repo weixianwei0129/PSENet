@@ -191,3 +191,13 @@ def shrink(text_regions, rate, max_shr=20):
             shrunk_text_regions.append(bbox)
 
     return shrunk_text_regions
+
+
+def crop_img(img):
+    h, w = img.shape[:2]
+    crop_side = int(min(h, w) * random.uniform(0.5, 0.8))
+    if crop_side < 256:
+        return img
+    x = np.random.randint(0, w - crop_side)
+    y = np.random.randint(0, h - crop_side)
+    return img[y:y + crop_side, x:x + crop_side, :]
