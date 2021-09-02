@@ -193,14 +193,14 @@ def shrink(text_regions, rate, max_shr=20):
     return shrunk_text_regions
 
 
-def crop_img(img):
+def crop_img(matrices):
+    img = matrices[0]
     h, w = img.shape[:2]
-    crop_side = int(min(h, w) * random.uniform(0.5, 0.8))
+    crop_side = int(min(h, w) * np.random.uniform(0.5, 0.8))
     if crop_side < 256:
-        return img
+        return matrices
     x = np.random.randint(0, w - crop_side)
     y = np.random.randint(0, h - crop_side)
-    if len(img.shape) == 3:
-        return img[y:y + crop_side, x:x + crop_side, :]
-    else:
-        return img[y:y + crop_side, x:x + crop_side]
+    for idx, mat in enumerate(matrices):
+        matrices[idx] = mat[y:y + crop_side, x:x + crop_side]
+    return matrices

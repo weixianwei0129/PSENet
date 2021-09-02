@@ -11,6 +11,7 @@ from dataset.utils import shrink, random_rotate, crop_img
 from dataset.utils import random_color_aug, scale_aligned_short
 
 train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
 train_data_dir = os.path.join(train_root_dir, 'train')
 train_gt_dir = os.path.join(train_root_dir, 'train')
 
@@ -138,13 +139,14 @@ class PolygonDataSet(data.Dataset):
         if self.data_type == 'train':
             if np.random.uniform(0, 10) > 5:
                 img = random_color_aug(img)
-            maps = [img, gt_instance, training_mask] + gt_kernels
+            matrices = [img, gt_instance, training_mask] + gt_kernels
             if do_crop:
-                for i in range(len(maps)):
-                    maps[i] = cv2.resize(crop_img(maps[i]), (self.short_size, self.short_size))
+                matrices = crop_img(matrices)
+                for i in range(len(matrices)):
+                    matrices[i] = cv2.resize(matrices[i], (self.short_size, self.short_size))
             elif np.random.uniform(0, 10) > 5:  # rotate
-                maps = random_rotate(maps)
-            img, gt_instance, training_mask, gt_kernels = maps[0], maps[1], maps[2], maps[3:]
+                matrices = random_rotate(matrices)
+            img, gt_instance, training_mask, gt_kernels = matrices[0], matrices[1], matrices[2], matrices[3:]
 
         # gt_text 不区分文本实例
         gt_text = gt_instance.copy()
@@ -248,9 +250,8 @@ if __name__ == '__main__':
             gt_kernels = data['gt_kernels'][b].numpy()
             gt_kernels = (np.concatenate(gt_kernels, axis=0) * 255).astype(np.uint8)
             mask = np.where(gt_text[:, :, None] > 0, img, 0).astype(np.uint8)
-            cv2.imwrite("img.jpg", img)
-            cv2.imwrite("gt_text.jpg", gt_text)
-            cv2.imwrite("gt_kernels.jpg", gt_kernels)
-            cv2.imwrite("mask.jpg", mask)
-            exit()
-            # cv2.waitKey(0)
+            cv2.imshow("img.jpg", img)
+            cv2.imshow("gt_text.jpg", gt_text)
+            cv2.imshow("gt_kernels.jpg", gt_kernels)
+            cv2.imshow("mask.jpg", mask)
+            cv2.waitKey(0)
