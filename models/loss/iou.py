@@ -8,7 +8,7 @@ def iou_single(a, b, mask, n_class):
     a = a[valid]
     b = b[valid]
     miou = []
-    for i in range(n_class):
+    for i in range(1, n_class):
         inter = ((a == i) & (b == i)).float()
         union = ((a == i) | (b == i)).float()
 

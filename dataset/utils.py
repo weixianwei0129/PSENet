@@ -200,4 +200,7 @@ def crop_img(img):
         return img
     x = np.random.randint(0, w - crop_side)
     y = np.random.randint(0, h - crop_side)
-    return img[y:y + crop_side, x:x + crop_side, :]
+    if len(img.shape) == 3:
+        return img[y:y + crop_side, x:x + crop_side, :]
+    else:
+        return img[y:y + crop_side, x:x + crop_side]
