@@ -1,0 +1,36 @@
+model:
+  backbone: 
+    type: resnet50
+  neck:
+    type: FPN
+    in_channels: [256, 512, 1024, 2948]
+    out_channels: 128
+  detection_head:
+    type: PSENet_Head
+    in_channels: 1024
+    hidden_dim: 256
+    kernel_num: 7
+loss:
+  loss_text:
+    type: DiceLoss
+    loss_weight: 0.7
+  loss_kernel:
+    type: DiceLoss
+    loss_weight: 0.3
+train:
+  lr: 0.001
+  lf: 0.12
+  warmup_epochs: 5
+  epoch: 600
+  optimizer: SGD
+  batch_size: 16
+data:
+  batch_size: 2
+  short_size: 736
+  kernel_num: 7
+  min_scale: 0.4
+  use_mosaic: 5
+evaluation:
+  min_area: 16
+  kernel_num: 7
+
