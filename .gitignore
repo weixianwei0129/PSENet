@@ -11,6 +11,7 @@ __pycache__/
 *.o
 *.nfs*
 models/post_processing/pse/pse.cpp
+.DS_Store
 
 # Distribution / packaging
 .Python

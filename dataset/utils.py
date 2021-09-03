@@ -7,6 +7,29 @@ import pyclipper
 random.seed(123456)
 
 
+def clip_polygon(subj, h, w):
+    # 重要的点，有的点可能会超出边界
+    subjs = []
+    for sub in subj:
+        sub = sub * np.array([w, h] * (len(sub) // 2))
+        sub = sub.reshape((-1, 2))
+        subjs.append(sub.astype(int).tolist())
+    # 边界
+    clip = ((0, h), (w, h), (w, 0), (0, 0))
+
+    pc = pyclipper.Pyclipper()
+
+    pc.AddPath(clip, pyclipper.PT_CLIP, True)
+    pc.AddPaths(subjs, pyclipper.PT_SUBJECT, True)
+
+    solution = pc.Execute(pyclipper.CT_INTERSECTION, pyclipper.PFT_EVENODD)
+    res = []
+    for s in solution:
+        s = np.array(s) / np.array([w, h]).T
+        res.append(s.flatten())
+    return res
+
+
 # Random aug
 def random_color_aug(image):
     """
@@ -193,14 +216,25 @@ def shrink(text_regions, rate, max_shr=20):
     return shrunk_text_regions
 
 
-def crop_img(matrices):
-    img = matrices[0]
+def crop_img(img, text_regions, short_size):
+    # 计算resize尺寸
     h, w = img.shape[:2]
-    crop_side = int(min(h, w) * np.random.uniform(0.5, 0.8))
+    min_side = min([h, w, short_size * 2])
+    img = scale_aligned_short(img, min_side)
+    # 计算crop尺寸
+    oh, ow = img.shape[:2]
+    crop_side = int(min(oh, ow) * np.random.uniform(0.5, 0.8))
+    img = cv2.resize(img, (short_size, short_size))
     if crop_side < 256:
-        return matrices
-    x = np.random.randint(0, w - crop_side)
-    y = np.random.randint(0, h - crop_side)
-    for idx, mat in enumerate(matrices):
-        matrices[idx] = mat[y:y + crop_side, x:x + crop_side]
-    return matrices
+        return img, text_regions
+    x = np.random.randint(0, ow - crop_side)
+    y = np.random.randint(0, oh - crop_side)
+    img = img[y:y + crop_side, x:x + crop_side]
+    # crop后的尺寸
+    ch, cw = img.shape[:2]
+    regions = []
+    for region in text_regions:
+        region = (np.reshape(region, (-1, 2)) * np.array([ow, oh]).T - np.array([x, y]).T) / np.array([cw, ch]).T
+        regions.append(region.flatten())
+    img = cv2.resize(img, (short_size, short_size))
+    return img, regions
