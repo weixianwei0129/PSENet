@@ -11,7 +11,7 @@ from dataset.utils import shrink, random_rotate, crop_img
 from dataset.utils import random_color_aug, scale_aligned_short
 
 train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
-train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
+# train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
 train_data_dir = os.path.join(train_root_dir, 'train')
 train_gt_dir = os.path.join(train_root_dir, 'train')
 

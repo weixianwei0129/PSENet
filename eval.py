@@ -13,7 +13,7 @@ from models.psenet import PSENet
 from dataset.polygon import get_ann
 from models.post_processing.tools import get_results
 
-cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def iou_single(a, b, n_class=2):
@@ -63,8 +63,8 @@ def preprocess_img(img, short_size=736, mean=None, std=None):
     img = np.transpose(img, (2, 0, 1))[None, ...]
     img = np.ascontiguousarray(img).astype(np.float32)
     assert len(img.shape) == 4
-    img = torch.from_numpy(img)
-    return img.cuda() if cuda == 'cuda' else img
+    img = torch.from_numpy(img).to(device)
+    return img.to(device)
 
 
 @torch.no_grad()
@@ -85,20 +85,20 @@ def load_model(root_path):
     cfg = EasyDict(yaml.safe_load(open(cfg_path)))
     model = PSENet(**cfg.model)
 
-    checkpoint = torch.load(weights)
+    checkpoint = torch.load(weights, map_location=torch.device(device))
     d = OrderedDict()
     for key, value in checkpoint['state_dict'].items():
         name = key[7:]  # key 中删除前七个字符
         d[name] = value
     model.load_state_dict(d)
-    if cuda == 'cuda':
-        model = model.cuda()
+    model = model.to(device)
+    print("Load model finished!")
     return model, cfg
 
 
 def main():
-    model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.3.0/')
-    all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500/test//*.JPG")
+    model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.4.0/')
+    all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500/test/*.JPG")
     prs, rcs, ious = [], [], []
     all_path.sort()
     for img_path in all_path:
@@ -140,6 +140,7 @@ def main():
             predict_mask = np.zeros_like(img, dtype=np.uint8)
             predict_mask[..., 2] = np.clip(label * 255, 0, 255).astype(np.uint8)
             gt_img = np.clip(0.3 * predict_mask + gt_img, 0, 255).astype(np.uint8)
+            gt_img = np.concat([gt_img, np.stack([predice_mask]*3,axis=-1)], axis=2)
 
             basename = os.path.basename(img_path)
             cv2.imwrite(basename, gt_img)
