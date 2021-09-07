@@ -10,12 +10,13 @@ import torchvision.transforms as transforms
 from dataset.utils import shrink, random_rotate, crop_img
 from dataset.utils import random_color_aug, scale_aligned_short, clip_polygon
 
-train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+# train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
 train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
 train_data_dir = os.path.join(train_root_dir, 'train')
 train_gt_dir = os.path.join(train_root_dir, 'train')
 
-test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+# test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+test_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
 test_data_dir = os.path.join(train_root_dir, 'test')
 test_gt_dir = os.path.join(train_root_dir, 'test')
 
@@ -86,7 +87,7 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        do_crop = np.random.randint(0, 10) < 3
+        do_crop = np.random.randint(0, 10) < 3 and self.data_type == 'train'
 
         if self.data_type == 'train' and not do_crop and \
                 np.random.uniform(0, 10) < self.use_mosaic:
@@ -239,9 +240,9 @@ if __name__ == '__main__':
     import sys
 
     sys.path.append(os.path.dirname(__file__) + '/../')
-    dataset = PolygonDataSet(data_type='train')
+    dataset = PolygonDataSet(data_type='test')
     print("total: ", len(dataset))
-    batch_size = 2
+    batch_size = 1
     loader = data.DataLoader(
         dataset,
         batch_size=batch_size,

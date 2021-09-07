@@ -3,7 +3,7 @@ import glob
 import numpy as np
 import cv2
 
-all_json = glob.glob("/Users/weixianwei/Dataset/open/MSRA-TD500/train/*.json")
+all_json = glob.glob("/Users/weixianwei/Dataset/open/MSRA-TD500/test/*.json")
 all_json.sort()
 for jsP in all_json:
     info = json.load(open(jsP))

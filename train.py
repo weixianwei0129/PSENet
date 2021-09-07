@@ -16,7 +16,8 @@ from torch.optim import SGD, Adam, lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
 
 from utils import AverageMeter
-from models.psenet import PSENet
+# from models.psenet import PSENet
+from models.custom_backbones import ResNetCSP as PSENet
 from dataset.polygon import PolygonDataSet
 from models.loss.psenet_loss import PSENet_Loss
 from models.post_processing.tools import get_results

@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .backbone import build_backbone
-from .neck import build_neck
-from .head import build_head
+from models.backbone import build_backbone
+from models.neck import build_neck
+from models.head import build_head
 
 
 class PSENet(nn.Module):
@@ -35,3 +35,17 @@ class PSENet(nn.Module):
         det_out = self.det_head(f)
         det_out = self._upsample(det_out, imgs.size())
         return det_out
+
+
+if __name__ == '__main__':
+    import yaml
+    import numpy as np
+    from easydict import EasyDict
+    from torchsummary import summary
+
+    x = torch.from_numpy(np.zeros((1, 3, 640, 640), dtype=np.float32))
+    cfg = EasyDict(yaml.safe_load(open('../config/pse_v1.3.0.yaml')))
+    model = PSENet(**cfg.model)
+    # summary(model, (3, 320, 320))
+    x = model(x)
+    print(x.shape)
