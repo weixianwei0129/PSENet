@@ -10,12 +10,12 @@ import torchvision.transforms as transforms
 from dataset.utils import shrink, random_rotate, crop_img
 from dataset.utils import random_color_aug, scale_aligned_short, clip_polygon
 
-train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/'
 # train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
 train_data_dir = os.path.join(train_root_dir, 'train')
 train_gt_dir = os.path.join(train_root_dir, 'train')
 
-test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500/'
+test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/'
 test_data_dir = os.path.join(train_root_dir, 'test')
 test_gt_dir = os.path.join(train_root_dir, 'test')
 
@@ -86,7 +86,7 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        do_crop = np.random.randint(0, 10) < 3
+        do_crop = np.random.randint(0, 10) < 3 and self.data_type == 'train'
 
         if self.data_type == 'train' and not do_crop and \
                 np.random.uniform(0, 10) < self.use_mosaic:
@@ -115,24 +115,29 @@ class PolygonDataSet(data.Dataset):
         # 记录难识别文本的区域: 难识别的文本为0, 其他为1
         training_mask = np.ones((height, width), dtype='uint8')
         selected_text_regions = []
+        index = 0
         for idx, points in enumerate(text_regions):
-            if do_crop:
-                # 计算被裁减掉的多边形区域的最终形状
-                points = clip_polygon([points], height, width)
-                if not len(points):
+            try:
+                if do_crop:
+                    # 计算被裁减掉的多边形区域的最终形状
+                    points = clip_polygon([points], height, width)
+                    if not len(points):
+                        continue
+                points = np.reshape(points, (-1, 2)) * np.array([width, height]).T
+                points = np.int32(points)
+                # 如果文本面积很小并且的长宽太小(看不清楚),那么不要
+                area = cv2.contourArea(points)
+                shape = cv2.minAreaRect(points)[1]
+                if area < 300 and min(shape) < 10:
                     continue
-            points = np.reshape(points, (-1, 2)) * np.array([width, height]).T
-            points = np.int32(points)
-            # 如果文本面积很小并且的长宽太小(看不清楚),那么不要
-            area = cv2.contourArea(points)
-            shape = cv2.minAreaRect(points)[1]
-            if area < 300 and min(shape) < 10:
+                # 制作label
+                selected_text_regions.append(points)
+                cv2.fillPoly(gt_instance, [points], min(index + 1, 100))
+                index += 1
+                if words[idx] == '###':
+                    cv2.fillPoly(training_mask, [points], 0)
+            except:
                 continue
-            # 制作label
-            selected_text_regions.append(points)
-            cv2.fillPoly(gt_instance, [points], min(idx + 1, 100))
-            if words[idx] == '###':
-                cv2.fillPoly(training_mask, [points], 0)
         text_regions = selected_text_regions
 
         gt_kernels = []
@@ -154,7 +159,7 @@ class PolygonDataSet(data.Dataset):
 
         # gt_text 不区分文本实例
         gt_text = gt_instance.copy()
-        # gt_text[gt_text > 0] = 1
+        gt_text[gt_text > 0] = 1
         gt_kernels = np.array(gt_kernels)
 
         img = Image.fromarray(img)
