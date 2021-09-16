@@ -24,24 +24,20 @@ def get_mini_boxes(contour):
     return box, min(bounding_box[1])
 
 
-def postprocess_bitmap(img, labels, rate=0.4, max_shr=20):
+def postprocess_bitmap(img, labels):
+    # h, w
     ratio = np.array(img.shape[:2]) / np.array(labels.shape[:2])
     results = []
     for i in range(1, np.max(labels) + 1):
         label = ((labels == i).astype(int) * 255).astype(np.uint8)
         contours, _ = cv2.findContours(label, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-        pco = pyclipper.PyclipperOffset()
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < 100:
                 continue
-            pco.AddPath(cnt[:, 0, :], pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
-            offset = min(int(area * (1 - rate) / (cv2.arcLength(cnt, True) + 0.001) + 0.5), max_shr)
-            print("clipper offset: ", offset)
-            dilated_polygon = pco.Execute(offset)
-            cnt = np.array(dilated_polygon)[0]
             box, _ = get_mini_boxes(cnt)
-            box = (np.reshape(box, [-1, 2]) * ratio.T).astype(int)
+            # w, h
+            box = (np.reshape(box, [-1, 2]) * ratio[::-1].T).astype(int)
             p0, p1, p2, p3 = box
             h = int(distance(p0, p3))
             w = int(distance(p0, p1))
