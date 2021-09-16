@@ -116,6 +116,7 @@ class PolygonDataSet(data.Dataset):
         training_mask = np.ones((height, width), dtype='uint8')
         selected_text_regions = []
         for idx, points in enumerate(text_regions):
+            ignore = words[idx] == '###'
             if do_crop:
                 # 计算被裁减掉的多边形区域的最终形状
                 points = clip_polygon([points], height, width)
@@ -123,16 +124,19 @@ class PolygonDataSet(data.Dataset):
                     continue
             points = np.reshape(points, (-1, 2)) * np.array([width, height]).T
             points = np.int32(points)
-            # 如果文本面积很小并且的长宽太小(看不清楚),那么不要
-            area = cv2.contourArea(points)
-            shape = cv2.minAreaRect(points)[1]
-            if area < 300 and min(shape) < 10:
-                continue
-            # 制作label
-            selected_text_regions.append(points)
-            cv2.fillPoly(gt_instance, [points], min(idx + 1, 100))
-            if words[idx] == '###':
+            # # 如果文本面积很小并且的长宽太小(看不清楚),那么不要
+            # area = cv2.contourArea(points)
+            # shape = cv2.minAreaRect(points)[1]
+            # if area < 200 and min(shape) < 8:
+            #     ignore = True
+
+            if ignore:
                 cv2.fillPoly(training_mask, [points], 0)
+            else:
+                # 制作label
+                cv2.fillPoly(gt_instance, [points], min(idx + 1, 100))
+                selected_text_regions.append(points)
+
         text_regions = selected_text_regions
 
         gt_kernels = []
@@ -252,9 +256,10 @@ if __name__ == '__main__':
             img = ((img - np.min(img)) / (np.max(img) - np.min(img)) * 255).astype(np.uint8)
             gt_text = (data['gt_texts'][b].numpy() * 255).astype(np.uint8)
             gt_kernels = data['gt_kernels'][b].numpy()
+            train_mask = (data['training_masks'][b].numpy() * 255).astype(np.uint8)
             gt_kernels = (np.concatenate(gt_kernels, axis=0) * 255).astype(np.uint8)
             mask = np.where(gt_text[:, :, None] > 0, img, 0).astype(np.uint8)
-            concat = [img, np.stack([gt_text] * 3, axis=-1), mask]
+            concat = [img, np.stack([gt_text] * 3, axis=-1), np.stack([train_mask] * 3, axis=-1), mask]
             concat = np.concatenate(concat, axis=1)
             cv2.imshow("img.jpg", concat)
             cv2.imwrite("img.jpg", concat)
