@@ -7,14 +7,15 @@ import torch
 import numpy as np
 from easydict import EasyDict
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 from collections import OrderedDict
 
 from models.psenet import PSENet
 from dataset.polygon import get_ann
 from models.post_processing.tools import get_results
 
-cuda = 'cuda' if torch.cuda.is_available() else 'cpu'
-
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"run model use {device}!")
 
 def iou_single(a, b, n_class=2):
     miou = []
@@ -63,8 +64,8 @@ def preprocess_img(img, short_size=736, mean=None, std=None):
     img = np.transpose(img, (2, 0, 1))[None, ...]
     img = np.ascontiguousarray(img).astype(np.float32)
     assert len(img.shape) == 4
-    img = torch.from_numpy(img)
-    return img.cuda() if cuda == 'cuda' else img
+    img = torch.from_numpy(img).to(device)
+    return img.to(device)
 
 
 @torch.no_grad()
@@ -85,20 +86,20 @@ def load_model(root_path):
     cfg = EasyDict(yaml.safe_load(open(cfg_path)))
     model = PSENet(**cfg.model)
 
-    checkpoint = torch.load(weights)
+    checkpoint = torch.load(weights, map_location=torch.device(device))
     d = OrderedDict()
     for key, value in checkpoint['state_dict'].items():
         name = key[7:]  # key 中删除前七个字符
         d[name] = value
     model.load_state_dict(d)
-    if cuda == 'cuda':
-        model = model.cuda()
+    model = model.to(device)
+    print("Load model finished!")
     return model, cfg
 
 
 def main():
-    model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.3.0/')
-    all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500/test//*.JPG")
+    model, cfg = load_model('/data/weixianwei/models/psenet/uniform/v1.5.0/')
+    all_path = glob.glob("/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/test/*.JPG")
     prs, rcs, ious = [], [], []
     all_path.sort()
     for img_path in all_path:
@@ -120,16 +121,17 @@ def main():
         _, label = do_infer(model, img, cfg)
 
         # Metric
-        predict = (label > 0).astype(int).flatten()
-        iou = iou_single(predict, gt_text)
-        tp = np.sum(np.logical_and(predict == 1, gt_text == 1))
-        fp = np.sum(np.logical_and(predict == 1, gt_text == 0))
-        fn = np.sum(np.logical_and(predict == 0, gt_text == 1))
+        predict_result = (label > 0).astype(int).flatten()
+        iou = iou_single(predict_result, gt_text)
+        tp = np.sum(np.logical_and(predict_result == 1, gt_text == 1))
+        fp = np.sum(np.logical_and(predict_result == 1, gt_text == 0))
+        fn = np.sum(np.logical_and(predict_result == 0, gt_text == 1))
 
         precision = tp / (tp + fp + 1e-4)
         recall = tp / (tp + fn + 1e-4)
 
         if iou < 0.5:
+            # predict_result = (predict_result * 255).astype(np.uint8)
             print(f"{img_path}>>{iou:.4f} | {words}")
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -140,6 +142,7 @@ def main():
             predict_mask = np.zeros_like(img, dtype=np.uint8)
             predict_mask[..., 2] = np.clip(label * 255, 0, 255).astype(np.uint8)
             gt_img = np.clip(0.3 * predict_mask + gt_img, 0, 255).astype(np.uint8)
+            # gt_img = np.concatenate([gt_img, np.stack([predict_result]*3,axis=-1)], axis=2)
 
             basename = os.path.basename(img_path)
             cv2.imwrite(basename, gt_img)
