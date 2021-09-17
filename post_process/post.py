@@ -1,5 +1,4 @@
 import cv2
-import pyclipper
 import numpy as np
 
 
@@ -48,6 +47,7 @@ def postprocess_bitmap(img, labels):
             results.append(
                 dict(
                     textImg=dst,
+                    bboxes=box,
                     Polygon=cnt.astype(int).tolist(),
                     minRect=box,
                 )

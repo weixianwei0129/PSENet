@@ -4,7 +4,7 @@ from .pse import pse
 
 
 # 后处理部分
-def get_results(out, kernel_num, min_area):
+def get_pse_label(out, kernel_num, min_area):
     score = torch.sigmoid(out[:, 0, :, :])
 
     kernels = out[:, :kernel_num, :, :] > 0

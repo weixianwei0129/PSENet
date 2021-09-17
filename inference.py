@@ -11,7 +11,7 @@ from collections import OrderedDict
 from models.psenet import PSENet
 from pre_process.pre import preprocess_img
 from post_process.post import postprocess_bitmap
-from models.post_processing.tools import get_results
+from models.post_processing.tools import get_pse_label
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -22,7 +22,7 @@ def do_infer(model, img, cfg):
     processed_img = preprocess_img(img)
     tensor = torch.from_numpy(processed_img).to(device)
     out = model(tensor)
-    score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
+    score, label = get_pse_label(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
     return score, label
 
 
