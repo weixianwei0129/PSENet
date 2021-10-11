@@ -19,7 +19,7 @@ from utils import AverageMeter
 from models.psenet import PSENet
 from dataset.polygon import PolygonDataSet
 from models.loss.psenet_loss import PSENet_Loss
-from models.post_processing.tools import get_results
+from models.post_processing.tools import get_pse_label
 
 torch.manual_seed(123456)
 torch.cuda.manual_seed(123456)
@@ -244,7 +244,7 @@ def main(opt):
     model_loss = PSENet_Loss(**cfg.loss)
 
     # data loader
-    train_dataset = PolygonDataSet('train')
+    train_dataset = PolygonDataSet(cfg.data, 'train')
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg.data.batch_size,
@@ -254,7 +254,7 @@ def main(opt):
         pin_memory=True
     )
 
-    test_dataset = PolygonDataSet('test')
+    test_dataset = PolygonDataSet(cfg.data, 'test')
     test_loader = DataLoader(
         test_dataset,
         batch_size=1,

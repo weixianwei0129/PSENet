@@ -36,3 +36,5 @@ vis/
 cc.sh
 *~
 tmp/
+
+train.log

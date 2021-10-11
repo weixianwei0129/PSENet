@@ -71,13 +71,22 @@ class PolygonDataSet(data.Dataset):
         self.short_size = short_size
         self.kernel_num = kernel_num
         self.min_scale = min_scale
+        
+        if data_type == 'train':
 
-        self.gt_paths = glob.glob(cfg.path_pattern)
+            pattern = os.path.join(cfg.path_pattern, "train/*/*.txt")
+        else:
+            pattern = os.path.join(cfg.path_pattern, "test/*/*.txt")
+        self.gt_paths = glob.glob(pattern)
         self.img_paths = []
         for path in self.gt_paths:
             img_path = path.replace(cfg.gt_postfix, cfg.img_postfix)
             self.img_paths.append(img_path)
         assert len(self.gt_paths) == len(self.img_paths)
+        if len(self.img_paths) == 0:
+            print("there is no data!", cfg.path_pattern)
+            exit()
+        print(f"collected {len(self.img_paths)} {data_type} samples!")
 
     def __len__(self):
         return len(self.img_paths)

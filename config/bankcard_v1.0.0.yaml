@@ -30,7 +30,7 @@ data:
   kernel_num: 7
   min_scale: 0.4
   use_mosaic: 5
-  path_pattern: /Users/weixianwei/Dataset/ymm/bankcard/text_det/*/*.txt
+  path_pattern: /data/weixianwei/Dataset/bankcard/text_det/v1.0.0/
   gt_postfix: txt
   img_postfix: jpg
 evaluation:
