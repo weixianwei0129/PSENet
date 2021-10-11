@@ -10,23 +10,28 @@ import torchvision.transforms as transforms
 from dataset.utils import shrink, random_rotate, crop_img
 from dataset.utils import random_color_aug, scale_aligned_short, clip_polygon
 
-train_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/'
-# train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
-train_data_dir = os.path.join(train_root_dir, 'train')
-train_gt_dir = os.path.join(train_root_dir, 'train')
+# train_root_dir = '/Users/weixianwei/Dataset/ymm/bankcard/已完成/'
+# # train_root_dir = '/Users/weixianwei/Dataset/open/MSRA-TD500/'
+# train_data_dir = os.path.join(train_root_dir, 'card1')
+# train_gt_dir = os.path.join(train_root_dir, 'card2')
+#
+# test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/'
+# test_data_dir = os.path.join(train_root_dir, 'test')
+# test_gt_dir = os.path.join(train_root_dir, 'test')
 
-test_root_dir = '/data/weixianwei/psenet/data/MSRA-TD500_v1.2.0/'
-test_data_dir = os.path.join(train_root_dir, 'test')
-test_gt_dir = os.path.join(train_root_dir, 'test')
-
-img_postfix = "JPG"
-gt_postfix = "TXT"
+img_postfix = "jpg"
+gt_postfix = "txt"
 
 
 def get_img(img_path):
-    img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img
+    try:
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return img
+    except Exception as e:
+        print(e)
+        exit()
+
 
 
 def get_ann(img, gt_path):
@@ -55,6 +60,7 @@ def get_ann(img, gt_path):
 
 class PolygonDataSet(data.Dataset):
     def __init__(self,
+                 cfg,
                  data_type='train',
                  short_size=736,
                  kernel_num=7,
@@ -66,19 +72,11 @@ class PolygonDataSet(data.Dataset):
         self.kernel_num = kernel_num
         self.min_scale = min_scale
 
-        if self.data_type == 'train':
-            data_pattern = os.path.join(train_data_dir, f"*.{img_postfix}")
-            gt_pattern = os.path.join(train_gt_dir, f"*.{gt_postfix}")
-        elif self.data_type == 'test':
-            data_pattern = os.path.join(test_data_dir, f"*.{img_postfix}")
-            gt_pattern = os.path.join(test_gt_dir, f"*.{gt_postfix}")
-        else:
-            print('Error: data_type must be train or test!')
-            raise
-        self.img_paths = glob.glob(data_pattern)
-        self.img_paths.sort()
-        self.gt_paths = glob.glob(gt_pattern)
-        self.gt_paths.sort()
+        self.gt_paths = glob.glob(cfg.path_pattern)
+        self.img_paths = []
+        for path in self.gt_paths:
+            img_path = path.replace(cfg.gt_postfix, cfg.img_postfix)
+            self.img_paths.append(img_path)
         assert len(self.gt_paths) == len(self.img_paths)
 
     def __len__(self):
@@ -86,7 +84,7 @@ class PolygonDataSet(data.Dataset):
 
     def __getitem__(self, index):
 
-        do_crop = np.random.randint(0, 10) < 3 and self.data_type == 'train'
+        do_crop = np.random.randint(0, 10) < 7 and self.data_type == 'train'
 
         if self.data_type == 'train' and not do_crop and \
                 np.random.uniform(0, 10) < self.use_mosaic:
@@ -241,9 +239,14 @@ class PolygonDataSet(data.Dataset):
 
 if __name__ == '__main__':
     import sys
+    import yaml
+    from easydict import EasyDict
 
-    sys.path.append(os.path.dirname(__file__) + '/../')
-    dataset = PolygonDataSet(data_type='train')
+    cfg = EasyDict(yaml.safe_load(open("../config/bankcard_v1.0.0.yaml")))
+    dataset = PolygonDataSet(
+        cfg.data,
+        data_type='train'
+    )
     print("total: ", len(dataset))
     batch_size = 2
     loader = data.DataLoader(
