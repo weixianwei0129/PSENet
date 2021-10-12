@@ -12,7 +12,7 @@ from collections import OrderedDict
 
 from models.psenet import PSENet
 from dataset.polygon import get_ann
-from models.post_processing.tools import get_results
+from models.post_processing.tools import get_pse_label
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"run model use {device}!")
@@ -73,7 +73,7 @@ def do_infer(model, img, cfg):
     model.eval()
     processed_img = preprocess_img(img)
     out = model(processed_img)
-    score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
+    score, label = get_pse_label(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
     height, width = img.shape[:2]
     score = cv2.resize(score.astype(np.float32), (width, height))
     label = cv2.resize(label.astype(np.float32), (width, height))

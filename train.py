@@ -119,7 +119,7 @@ def test(test_loader, model, model_loss, epoch, cfg, writer):
         losses.update(loss.item())
 
         if iter % np.ceil(total_data_num / 5) == 0:
-            score, label = get_results(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
+            score, label = get_pse_label(out, cfg.evaluation.kernel_num, cfg.evaluation.min_area)
             score = torch.from_numpy(score)
             label = torch.from_numpy(label)
             if cuda == 'cuda':
