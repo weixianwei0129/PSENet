@@ -74,7 +74,7 @@ class PolygonDataSet(data.Dataset):
         
         if data_type == 'train':
 
-            pattern = os.path.join(cfg.path_pattern, "train/*/*.txt")
+            pattern = os.path.join(cfg.path_pattern, "train/card3/*.txt")
         else:
             pattern = os.path.join(cfg.path_pattern, "test/*/*.txt")
         self.gt_paths = glob.glob(pattern)
