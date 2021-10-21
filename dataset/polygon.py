@@ -33,7 +33,6 @@ def get_img(img_path):
         exit()
 
 
-
 def get_ann(img, gt_path):
     """
     如果img is None, 则返回像素坐标
@@ -264,10 +263,5 @@ if __name__ == '__main__':
             mask = np.where(gt_text[:, :, None] > 0, img, 0).astype(np.uint8)
             concat = [img, np.stack([gt_text] * 3, axis=-1), np.stack([train_mask] * 3, axis=-1), mask]
             concat = np.concatenate(concat, axis=1)
-            cv2.imshow("img.jpg", concat)
-            cv2.imwrite("img.jpg", concat)
-
-            # cv2.imshow("gt_text.jpg", gt_text)
-            # cv2.imshow("gt_kernels.jpg", gt_kernels)
-            # cv2.imshow("mask.jpg", mask)
+            cv2.imshow("img", concat)
             cv2.waitKey(0)

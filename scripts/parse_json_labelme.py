@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import glob
 
-all_json = glob.glob("D:/dataset/pse_dataset/ymm_v1.1/*.json")
+all_json = glob.glob("5/*.json")
 
 
 def clockwise_from_upper_left(pts):
@@ -46,7 +46,7 @@ for json_file in all_json:
             pts.append(points)
         strings = strings[:-1]
         basename = os.path.basename(json_file).split('.')[0]
-        with open(json_file.replace(basename + '.json', f"gt_{basename}.txt"), "w") as fo:
+        with open(json_file.replace(basename + '.json', f"{basename}.txt"), "w") as fo:
             fo.writelines(strings)
         # debug
         image_data = cv2.imread(json_file.replace(".json", ".jpg"))
